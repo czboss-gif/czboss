@@ -1,0 +1,2592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KINGPIN AI V2</title>
+
+<style>
+
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+font-family:Inter,Arial,sans-serif;
+}
+
+body{
+background:#0b0f16;
+color:#fff;
+padding:25px;
+}
+
+.container{
+max-width:1400px;
+margin:auto;
+}
+
+.header{
+display:flex;
+justify-content:space-between;
+align-items:center;
+margin-bottom:25px;
+}
+
+.logo{
+font-size:30px;
+font-weight:800;
+letter-spacing:2px;
+}
+
+.logo span{
+color:#22c55e;
+}
+
+.version{
+color:#666;
+font-size:14px;
+}
+
+.cards{
+
+display:grid;
+grid-template-columns:repeat(6,1fr);
+gap:15px;
+margin-bottom:25px;
+
+}
+
+.card{
+
+background:#151b25;
+padding:18px;
+border-radius:12px;
+border:1px solid #222;
+
+}
+
+.card-title{
+
+font-size:12px;
+color:#888;
+margin-bottom:10px;
+text-transform:uppercase;
+
+}
+
+.card-value{
+
+font-size:28px;
+font-weight:bold;
+
+}
+
+.green{
+color:#22c55e;
+}
+
+.red{
+color:#ef4444;
+}
+
+.orange{
+color:#f59e0b;
+}
+
+.blue{
+color:#60a5fa;
+}
+
+.upload{
+
+background:#151b25;
+border:2px dashed #333;
+border-radius:15px;
+padding:60px;
+text-align:center;
+cursor:pointer;
+transition:.25s;
+margin-bottom:25px;
+
+}
+
+.upload:hover{
+
+border-color:#22c55e;
+background:#18212d;
+
+}
+
+.upload h2{
+
+margin-bottom:15px;
+
+}
+
+.upload p{
+
+color:#777;
+
+}
+
+.upload input{
+
+display:none;
+
+}
+
+.buttons{
+
+display:flex;
+gap:15px;
+margin-bottom:25px;
+
+}
+
+button{
+
+padding:14px 28px;
+border:none;
+border-radius:8px;
+cursor:pointer;
+font-weight:bold;
+font-size:15px;
+
+}
+
+.primary{
+
+background:#22c55e;
+color:#fff;
+
+}
+
+.secondary{
+
+background:#303744;
+color:#fff;
+
+}
+
+.primary:hover{
+
+background:#18a548;
+
+}
+
+.secondary:hover{
+
+background:#404a5b;
+
+}
+
+.table-box{
+
+background:#151b25;
+border-radius:12px;
+overflow:hidden;
+
+}
+
+table{
+
+width:100%;
+border-collapse:collapse;
+
+}
+
+th{
+
+background:#1d2531;
+padding:15px;
+font-size:13px;
+text-align:left;
+
+}
+
+td{
+
+padding:14px;
+border-top:1px solid #232c39;
+font-size:14px;
+
+}
+
+.empty{
+
+padding:70px;
+text-align:center;
+color:#666;
+
+}
+
+.footer{
+
+margin-top:30px;
+color:#666;
+font-size:13px;
+text-align:center;
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="header">
+
+<div class="logo">
+
+KINGPIN <span>AI V2</span>
+
+</div>
+
+<div class="version">
+
+STEP 1A
+
+</div>
+
+</div>
+
+<div class="cards">
+
+<div class="card">
+
+<div class="card-title">
+CSV Files
+</div>
+
+<div class="card-value green" id="filesLoaded">
+0
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-title">
+Rows
+</div>
+
+<div class="card-value blue" id="rowsLoaded">
+0
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-title">
+Duplicates
+</div>
+
+<div class="card-value orange" id="duplicates">
+0
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-title">
+Valid
+</div>
+
+<div class="card-value green" id="validRows">
+0
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-title">
+Invalid
+</div>
+
+<div class="card-value red" id="invalidRows">
+0
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-title">
+Status
+</div>
+
+<div class="card-value" id="status">
+Idle
+</div>
+
+</div>
+
+</div>
+<div class="cards">
+
+<div class="card">
+<div class="card-title">Markov</div>
+<div class="card-value" id="wm">1</div>
+</div>
+
+<div class="card">
+<div class="card-title">P3</div>
+<div class="card-value" id="w3">1</div>
+</div>
+
+<div class="card">
+<div class="card-title">P4</div>
+<div class="card-value" id="w4">1</div>
+</div>
+
+<div class="card">
+<div class="card-title">P5</div>
+<div class="card-value" id="w5">1</div>
+</div>
+
+</div>
+<label class="upload">
+
+<input
+type="file"
+id="csvFiles"
+multiple
+accept=".csv">
+
+<h2>
+
+📂 Upload CSV Files
+
+</h2>
+
+<p>
+
+Click or Drag & Drop
+
+</p>
+
+</label>
+
+<div class="buttons">
+
+<button class="primary">
+
+Clean Dataset
+
+</button>
+
+<button class="secondary">
+
+Export CSV
+
+</button>
+
+<button class="secondary">
+
+Train AI
+
+</button>
+
+</div>
+
+<div class="table-box">
+<div class="cards">
+
+<div class="card">
+
+<div class="card-title">
+
+Prediction
+
+</div>
+
+<div class="card-value green"
+
+id="prediction">
+
+--
+
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-title">
+
+Confidence
+
+</div>
+
+<div class="card-value blue"
+
+id="confidence">
+
+0%
+
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-title">
+
+BIG Score
+
+</div>
+
+<div class="card-value"
+
+id="bigScore">
+
+0
+
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-title">
+
+SMALL Score
+
+</div>
+
+<div class="card-value"
+
+id="smallScore">
+
+0
+
+</div>
+
+</div>
+
+</div>
+<div class="cards">
+<div class="card">
+
+<div class="card-title">
+
+Engines
+
+</div>
+
+<div class="card-value blue"
+
+id="engineCount">
+
+0
+
+</div>
+
+</div>
+<div class="card">
+<div class="card-title">Wins</div>
+<div class="card-value green" id="btWins">0</div>
+</div>
+
+<div class="card">
+<div class="card-title">Losses</div>
+<div class="card-value red" id="btLosses">0</div>
+</div>
+
+<div class="card">
+<div class="card-title">Accuracy</div>
+<div class="card-value blue" id="btAccuracy">0%</div>
+</div>
+
+<div class="card">
+<div class="card-title">Max Loss</div>
+<div class="card-value orange" id="btMaxLoss">0</div>
+</div>
+
+<div class="card">
+<div class="card-title">Current Loss</div>
+<div class="card-value" id="btCurrentLoss">0</div>
+</div>
+
+<div class="card">
+<div class="card-title">Predictions</div>
+<div class="card-value" id="btTotal">0</div>
+</div>
+
+</div>
+
+<button
+class="primary"
+style="margin-bottom:25px"
+onclick="runBacktest()">
+
+Run Backtest
+
+</button>
+<table>
+
+<thead>
+
+<tr>
+
+<th>Period</th>
+
+<th>Number</th>
+
+<th>Big/Small</th>
+
+<th>Color</th>
+
+<th>Odd/Even</th>
+
+<th>Source File</th>
+<th>Max Loss</th>
+
+</tr>
+
+</thead>
+
+<tbody id="previewBody">
+
+<tr>
+
+<td colspan="6" class="empty">
+
+No CSV Loaded
+
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+<h3 style="margin:25px 0 10px">
+
+Engine Leaderboard
+
+</h3>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Engine</th>
+<th>Wins</th>
+<th>Losses</th>
+<th>Accuracy</th>
+<th>Max Loss</th>
+<th>Reliability</th>
+<th>Weight</th>
+<th>Usage</th>
+<th>Threshold</th>
+<th>Status</th>
+</tr>
+
+</thead>
+
+<tbody id="engineTable">
+
+</tbody>
+
+</table>
+</div>
+
+<div class="footer">
+
+KINGPIN AI V2
+
+</div>
+
+</div>
+<script>
+// ===============================
+// AI MODEL
+// ===============================
+
+let AI = {
+
+    trained:false,
+
+    totalRows:0,
+
+    transition:{},
+
+    patterns:{},
+
+    frequency:new Array(10).fill(0),
+
+    bsFrequency:{
+        BIG:0,
+        SMALL:0
+    },
+    numberTransition:{},
+    windowModels:{},
+    frequencyModels:{},
+    numberProbability:{},
+    gapModels:{},
+    markov2:{},
+    markov3:{},
+    numberPatterns:{},
+    numberFrequencyModels:{},
+    numberGapProfiles:{},
+};
+function trainNumberGapProfile(){
+
+    AI.numberGapProfiles={};
+
+    let lastSeen=new Array(10).fill(-1);
+
+    for(let i=0;i<cleanRows.length;i++){
+
+        let gaps=[];
+
+        for(let n=0;n<10;n++){
+
+            if(lastSeen[n]==-1)
+
+                gaps.push(99);
+
+            else
+
+                gaps.push(i-lastSeen[n]);
+
+        }
+
+        const key=gaps.join("-");
+
+        if(!AI.numberGapProfiles[key])
+
+            AI.numberGapProfiles[key]=new Array(10).fill(0);
+
+        AI.numberGapProfiles[key][cleanRows[i].number]++;
+
+        lastSeen[cleanRows[i].number]=i;
+
+    }
+
+}
+function trainNumberFrequency(window){
+
+    if(!AI.numberFrequencyModels[window])
+
+        AI.numberFrequencyModels[window]={};
+
+    for(let i=window;i<cleanRows.length;i++){
+
+        let freq=new Array(10).fill(0);
+
+        for(let j=i-window;j<i;j++){
+
+            freq[cleanRows[j].number]++;
+
+        }
+
+        const key=freq.join("-");
+
+        if(!AI.numberFrequencyModels[window][key])
+
+            AI.numberFrequencyModels[window][key]=new Array(10).fill(0);
+
+        AI.numberFrequencyModels[window][key][cleanRows[i].number]++;
+
+    }
+
+}
+function trainNumberPattern(length){
+
+    if(!AI.numberPatterns[length])
+
+        AI.numberPatterns[length]={};
+
+    for(let i=length;i<cleanRows.length;i++){
+
+        const key=
+
+        cleanRows
+
+        .slice(i-length,i)
+
+        .map(x=>x.number)
+
+        .join("-");
+
+        if(!AI.numberPatterns[length][key])
+
+            AI.numberPatterns[length][key]=new Array(10).fill(0);
+
+        AI.numberPatterns[length][key][cleanRows[i].number]++;
+
+    }
+
+}
+const MAX_PATTERN_LENGTH=15;
+
+// ======================================
+// ENGINE MANAGER
+// ======================================
+
+const ENGINES=[];
+
+function getEngine(name){
+
+    return ENGINES.find(e=>e.name===name);
+
+}
+function trainMarkov2(){
+
+    AI.markov2={};
+
+    for(let i=2;i<cleanRows.length;i++){
+
+        const key=
+
+        cleanRows[i-2].bs+
+
+        cleanRows[i-1].bs;
+
+        if(!AI.markov2[key]){
+
+            AI.markov2[key]={
+
+                BIG:0,
+
+                SMALL:0
+
+            };
+
+        }
+
+        AI.markov2[key][cleanRows[i].bs]++;
+
+    }
+
+}
+function trainMarkov3(){
+
+    AI.markov3={};
+
+    for(let i=3;i<cleanRows.length;i++){
+
+        const key=
+
+        cleanRows[i-3].bs+
+
+        cleanRows[i-2].bs+
+
+        cleanRows[i-1].bs;
+
+        if(!AI.markov3[key]){
+
+            AI.markov3[key]={
+
+                BIG:0,
+
+                SMALL:0
+
+            };
+
+        }
+
+        AI.markov3[key][cleanRows[i].bs]++;
+
+    }
+
+}
+function trainGap(){
+
+    AI.gapModels={};
+
+    let lastBig=-1;
+    let lastSmall=-1;
+
+    for(let i=0;i<cleanRows.length;i++){
+
+        const current=cleanRows[i].bs;
+
+        let gap=0;
+
+        if(current=="BIG"){
+
+            gap=lastBig==-1 ? 999 : i-lastBig;
+
+            lastBig=i;
+
+        }else{
+
+            gap=lastSmall==-1 ? 999 : i-lastSmall;
+
+            lastSmall=i;
+
+        }
+
+        if(!AI.gapModels[gap]){
+
+            AI.gapModels[gap]={
+
+                BIG:0,
+
+                SMALL:0
+
+            };
+
+        }
+
+        AI.gapModels[gap][current]++;
+
+    }
+
+}
+function trainFrequency(window){
+
+    if(!AI.frequencyModels[window])
+
+        AI.frequencyModels[window]={};
+
+    for(let i=window;i<cleanRows.length;i++){
+
+        let big=0;
+        let small=0;
+
+        for(let j=i-window;j<i;j++){
+
+            if(cleanRows[j].bs=="BIG")
+                big++;
+            else
+                small++;
+
+        }
+
+        const diff=big-small;
+
+        if(!AI.frequencyModels[window][diff]){
+
+            AI.frequencyModels[window][diff]={
+
+                BIG:0,
+
+                SMALL:0
+
+            };
+
+        }
+
+        AI.frequencyModels[window][diff][cleanRows[i].bs]++;
+
+    }
+
+}
+function trainNumberProbability(){
+
+    AI.numberProbability={};
+
+    for(let i=1;i<cleanRows.length;i++){
+
+        const prev=cleanRows[i-1].number;
+
+        if(!AI.numberProbability[prev]){
+
+            AI.numberProbability[prev]=new Array(10).fill(0);
+
+        }
+
+        AI.numberProbability[prev][cleanRows[i].number]++;
+
+    }
+
+}
+function trainWindow(windowSize){
+
+    AI.windowModels[windowSize]={};
+
+    for(let i=windowSize;i<cleanRows.length;i++){
+
+        let big=0;
+        let small=0;
+
+        for(let j=i-windowSize;j<i;j++){
+
+            if(cleanRows[j].bs=="BIG")
+                big++;
+            else
+                small++;
+
+        }
+
+        const key=big+"-"+small;
+
+        if(!AI.windowModels[windowSize][key]){
+
+            AI.windowModels[windowSize][key]={
+
+                BIG:0,
+                SMALL:0
+
+            };
+
+        }
+
+        AI.windowModels[windowSize][key][cleanRows[i].bs]++;
+
+    }
+
+}
+function addEngine(name,func){
+
+    ENGINES.push({
+        name,
+        predict:func,
+        // core
+        wins:0, losses:0, weight:1, accuracy:0,
+        maxLoss:0, currentLoss:0, predictions:0,
+        avgConfidence:0, confidenceSum:0,
+        minConfidence:0.60,
+        skipped:0, used:0, usage:0, enabled:true, score:0,
+        // number-level (number-first tracking)
+        numWins:0, numPredictions:0, numAccuracy:0,
+        // reliability metrics (spec: ENGINE RELIABILITY)
+        avgStreak:0, streakSum:0, streakCount:0,
+        stability:1, volatility:0,
+        calibrationError:0, calibSum:0,
+        falsePositive:0, falseNegative:0, fpRate:0, fnRate:0,
+        recoverySpeed:0, recoverySum:0, recoveryCount:0,
+        reliability:1,
+        recent:[]        // rolling recent correct(1)/wrong(0) → recent performance
+    });
+
+}
+addEngine("Markov",(history)=>{
+
+    if(history.length<2)
+        return null;
+
+    const last=history[history.length-1].bs;
+
+    const m=AI.transition[last];
+
+    if(!m)
+        return null;
+
+    return{
+
+        prediction:
+
+        m.BIG>=m.SMALL
+
+        ?
+
+        "BIG"
+
+        :
+
+        "SMALL",
+
+        confidence:
+
+        nodeConfidence(m)
+
+        };
+
+});
+addEngine("NumberTransition",(history)=>{
+
+    if(history.length<2)
+        return null;
+
+    const last=
+
+    history[history.length-1].number;
+
+    const arr=
+
+    AI.numberTransition[last];
+
+    if(!arr)
+        return null;
+
+    let best=0;
+
+    let idx=0;
+
+    for(let i=0;i<10;i++){
+
+        if(arr[i]>best){
+
+            best=arr[i];
+
+            idx=i;
+
+        }
+
+    }
+    console.log(
+
+        "Previous Number",
+
+        last,
+
+        "Predicted",
+
+        idx
+
+        );
+    return{
+
+        prediction:
+
+        idx>=5
+
+        ?
+
+        "BIG"
+
+        :
+
+        "SMALL",
+
+        confidence:
+
+        best/
+
+        Math.max(
+
+        arr.reduce((a,b)=>a+b,0),
+
+        1
+
+        )
+
+        };
+
+});
+
+/* ============================================================
+   V3 ENGINES — functional, NUMBER-FIRST, self-contained.
+   Predict from the live history slice only (no lookahead).
+   Each returns {number?, prediction, confidence, metadata}.
+   BIG/SMALL is DERIVED from number wherever a number is predicted.
+   ============================================================ */
+const bsOf = n => n>=5 ? "BIG" : "SMALL";
+function pack(number,conf,meta){ return {number,prediction:bsOf(number),confidence:conf,metadata:meta||{}}; }
+function packBS(pred,conf,meta){ return {prediction:pred,confidence:conf,metadata:meta||{}}; }
+
+// 1) RUN LENGTH — does a same-side run of the current length continue or break?
+addEngine("RunLength",(h)=>{
+    if(h.length<12) return null;
+    const cur=h[h.length-1].bs; let run=1;
+    for(let i=h.length-2;i>=0 && h[i].bs===cur;i--) run++;
+    let cont=0,brk=0;
+    for(let i=1;i<h.length-1;i++){
+        let r=1,j=i; while(j-1>=0 && h[j-1].bs===h[i].bs){r++;j--;}
+        if(r===run) (h[i+1].bs===h[i].bs)?cont++:brk++;
+    }
+    const tot=cont+brk; if(tot<8) return null;
+    const contP=cont/tot;
+    const pred=contP>=0.5?cur:(cur==="BIG"?"SMALL":"BIG");
+    return packBS(pred,Math.max(contP,1-contP),{run,cont,brk});
+});
+
+// 2) ALTERNATION — choppy BSBS regime → expect the flip to continue
+addEngine("Alternation",(h)=>{
+    if(h.length<8) return null;
+    const w=Math.min(12,h.length); let flips=0;
+    for(let i=h.length-w+1;i<h.length;i++) if(h[i].bs!==h[i-1].bs) flips++;
+    const flipRate=flips/(w-1);
+    if(flipRate<0.6) return null;
+    const last=h[h.length-1].bs;
+    return packBS(last==="BIG"?"SMALL":"BIG",flipRate,{flipRate:+flipRate.toFixed(2)});
+});
+
+// 3) CYCLE — repeating BS cycle length (2..15) confirmed in recent history
+addEngine("Cycle",(h)=>{
+    if(h.length<20) return null;
+    const seq=h.map(x=>x.bs);
+    for(const L of [2,3,4,5,6,8,10,12,15]){
+        if(seq.length<L*3) continue;
+        let ok=true;
+        for(let i=seq.length-L*3;i<seq.length-L;i++) if(seq[i]!==seq[i+L]){ok=false;break;}
+        if(ok) return packBS(seq[seq.length-L],0.66,{cycle:L});
+    }
+    return null;
+});
+
+// 4) NUMBER RUN — same digit repeating (777 → ?)
+addEngine("NumberRun",(h)=>{
+    if(h.length<8) return null;
+    const cur=h[h.length-1].number; let run=1;
+    for(let i=h.length-2;i>=0 && h[i].number===cur;i--) run++;
+    if(run<2) return null;
+    const cnt=new Array(10).fill(0); let tot=0;
+    for(let i=1;i<h.length-1;i++){
+        let r=1,j=i; while(j-1>=0 && h[j-1].number===h[i].number){r++;j--;}
+        if(r===run && h[i].number===cur){ cnt[h[i+1].number]++; tot++; }
+    }
+    if(tot<5) return null;
+    let best=0; for(let d=1;d<10;d++) if(cnt[d]>cnt[best]) best=d;
+    return pack(best,cnt[best]/tot,{run,digit:cur,tot});
+});
+
+// 5) NUMBER GAP — most overdue digit (gap vs its own average gap)
+addEngine("NumberGap",(h)=>{
+    if(h.length<30) return null;
+    const last=new Array(10).fill(-1), sum=new Array(10).fill(0), seen=new Array(10).fill(0);
+    const prev=new Array(10).fill(-1);
+    for(let i=0;i<h.length;i++){ const d=h[i].number;
+        if(prev[d]>=0){ sum[d]+=i-prev[d]; seen[d]++; } prev[d]=i; last[d]=i; }
+    let bestD=-1,bestRatio=0;
+    for(let d=0;d<10;d++){
+        if(seen[d]<3) continue;
+        const gap=h.length-1-last[d], mean=sum[d]/seen[d], ratio=gap/Math.max(mean,1);
+        if(ratio>bestRatio){ bestRatio=ratio; bestD=d; }
+    }
+    if(bestD<0 || bestRatio<1.5) return null;
+    return pack(bestD,Math.min(0.85,0.5+(bestRatio-1)*0.15),{overdue:bestD,ratio:+bestRatio.toFixed(2)});
+});
+
+// 6) PAIR TRANSITION — (a,b) → next number
+addEngine("PairTransition",(h)=>{
+    if(h.length<40) return null;
+    const a=h[h.length-2].number,b=h[h.length-1].number;
+    const cnt=new Array(10).fill(0); let tot=0;
+    for(let i=2;i<h.length;i++) if(h[i-2].number===a&&h[i-1].number===b){cnt[h[i].number]++;tot++;}
+    if(tot<6) return null;
+    let best=0; for(let d=1;d<10;d++) if(cnt[d]>cnt[best]) best=d;
+    return pack(best,cnt[best]/tot,{pair:[a,b],tot});
+});
+
+// 7) TRIPLET TRANSITION — (a,b,c) → next number
+addEngine("TripletTransition",(h)=>{
+    if(h.length<80) return null;
+    const a=h[h.length-3].number,b=h[h.length-2].number,c=h[h.length-1].number;
+    const cnt=new Array(10).fill(0); let tot=0;
+    for(let i=3;i<h.length;i++) if(h[i-3].number===a&&h[i-2].number===b&&h[i-1].number===c){cnt[h[i].number]++;tot++;}
+    if(tot<5) return null;
+    let best=0; for(let d=1;d<10;d++) if(cnt[d]>cnt[best]) best=d;
+    return pack(best,cnt[best]/tot,{triplet:[a,b,c],tot});
+});
+
+// 8) MOMENTUM — recent BIG-rate shift (short vs long window)
+addEngine("Momentum",(h)=>{
+    if(h.length<30) return null;
+    const rate=w=>{ let b=0; for(let i=h.length-w;i<h.length;i++) if(h[i].bs==="BIG") b++; return b/w; };
+    const s=rate(8), l=rate(30), shift=s-l;
+    if(Math.abs(shift)<0.12) return null;
+    return packBS(shift>0?"BIG":"SMALL",Math.min(0.8,0.5+Math.abs(shift)),{short:+s.toFixed(2),long:+l.toFixed(2)});
+});
+
+// 9) ENTROPY — low entropy in recent window → predict majority; high → abstain
+addEngine("Entropy",(h)=>{
+    if(h.length<20) return null;
+    const w=20; let b=0; for(let i=h.length-w;i<h.length;i++) if(h[i].bs==="BIG") b++;
+    const p=b/w,q=1-p, H=(p<=0||q<=0)?0:-(p*Math.log2(p)+q*Math.log2(q));
+    if(H>0.9) return null;
+    return packBS(p>=0.5?"BIG":"SMALL",Math.max(p,q),{entropy:+H.toFixed(3)});
+});
+
+// 10) VOLATILITY — flip-rate as randomness; high volatility → skip / low confidence
+addEngine("Volatility",(h)=>{
+    if(h.length<20) return null;
+    const w=20; let flips=0; for(let i=h.length-w+1;i<h.length;i++) if(h[i].bs!==h[i-1].bs) flips++;
+    const vol=flips/(w-1);
+    if(vol>0.65) return null;
+    let b=0; for(let i=h.length-w;i<h.length;i++) if(h[i].bs==="BIG") b++;
+    return packBS(b>=w/2?"BIG":"SMALL",Math.max(0.5,1-vol)*Math.max(b,w-b)/w,{volatility:+vol.toFixed(2)});
+});
+
+const TRAIN_PERCENT = 0.80;
+
+let TRAIN_DATA = [];
+let VALIDATION_DATA = [];
+
+function splitDataset(){
+
+    const split = Math.floor(cleanRows.length * TRAIN_PERCENT);
+
+    TRAIN_DATA = cleanRows.slice(0, split);
+
+    VALIDATION_DATA = cleanRows.slice(split);
+
+    console.log(
+        "Training:", TRAIN_DATA.length,
+        "Validation:", VALIDATION_DATA.length
+    );
+
+}
+function buildPatternEngine(length){
+
+    addEngine(
+
+        "Pattern"+length,
+
+        function(history){
+
+            if(history.length<length)
+                return null;
+
+            const key=
+
+            history
+            .slice(-length)
+            .map(x=>x.bs)
+            .join("");
+
+            if(!AI.patterns[length])
+                return null;
+
+            const node=
+
+            AI.patterns[length][key];
+
+            if(!node)
+                return null;
+
+            return{
+
+            prediction:
+
+            node.BIG>=node.SMALL
+
+            ?
+
+            "BIG"
+
+            :
+
+            "SMALL",
+
+            confidence:
+
+            nodeConfidence(node)
+
+            };
+
+        }
+
+    );
+
+}
+function buildWindowEngine(windowSize){
+
+    addEngine(
+
+        "Window"+windowSize,
+
+        function(history){
+
+            if(history.length<windowSize)
+                return null;
+
+            let big=0;
+            let small=0;
+
+            for(let i=history.length-windowSize;i<history.length;i++){
+
+                if(history[i].bs=="BIG")
+                    big++;
+                else
+                    small++;
+
+            }
+
+            const key=big+"-"+small;
+
+            if(!AI.windowModels[windowSize])
+                return null;
+
+            const node=
+
+            AI.windowModels[windowSize][key];
+
+            if(!node)
+                return null;
+
+            return{
+
+            prediction:
+
+            node.BIG>=node.SMALL
+
+            ?
+
+            "BIG"
+
+            :
+
+            "SMALL",
+
+            confidence:
+
+            nodeConfidence(node)
+
+            };
+
+        }
+
+    );
+
+}
+function runBacktest(){
+
+    // reset per-engine metrics (incl. the new reliability fields)
+    ENGINES.forEach(e=>{
+        e.wins=0; e.losses=0; e.currentLoss=0; e.maxLoss=0;
+        e.predictions=0; e.confidenceSum=0; e.skipped=0; e.used=0;
+        e.numWins=0; e.numPredictions=0;
+        e.streakSum=0; e.streakCount=0; e._runStreak=0;
+        e.calibSum=0; e.falsePositive=0; e.falseNegative=0;
+        e.recoverySum=0; e.recoveryCount=0; e._sinceLoss=null;
+        e.recent=[];
+    });
+
+    // OUT-OF-SAMPLE: models were fit on the first 80% (TRAIN); score on the
+    // held-out 20% (VALIDATION) via walk-forward. Never scored on training data.
+    const split = Math.max(6, Math.floor(cleanRows.length * TRAIN_PERCENT));
+
+    let wins=0, losses=0, skips=0, currentLoss=0, maxLoss=0;
+
+    for(let i=split;i<cleanRows.length;i++){
+
+        const history=cleanRows.slice(0,i);
+        const p=predictNext(history);
+        if(!p) continue;
+
+        const actual=cleanRows[i].bs;
+        const actualNum=cleanRows[i].number;
+
+        // per-engine scoring + reliability tracking (every voting engine)
+        p.votes.forEach(v=>{
+            const e=v.engine;
+            e.predictions++;
+            e.confidenceSum+=v.confidence;
+            const correct = v.prediction===actual;
+
+            // calibration: |confidence - outcome|
+            e.calibSum += Math.abs(v.confidence - (correct?1:0));
+            // number-level accuracy (number-first)
+            if(v.number!=null){ e.numPredictions++; if(v.number===actualNum) e.numWins++; }
+            // recent rolling performance (cap 60)
+            e.recent.push(correct?1:0); if(e.recent.length>60) e.recent.shift();
+
+            if(correct){
+                e.wins++; e.currentLoss=0;
+                // win-streak accounting
+                e._runStreak = e._runStreak>0 ? e._runStreak+1 : 1;
+                // recovery speed: steps from last loss to this win
+                if(e._sinceLoss!=null){ e.recoverySum+=e._sinceLoss; e.recoveryCount++; e._sinceLoss=null; }
+            } else {
+                e.losses++; e.currentLoss++;
+                if(e.currentLoss>e.maxLoss) e.maxLoss=e.currentLoss;
+                if(e._runStreak>0){ e.streakSum+=e._runStreak; e.streakCount++; }
+                e._runStreak=0;
+                e._sinceLoss = (e._sinceLoss==null?1:e._sinceLoss+1);
+                // false pos / neg (relative to BIG)
+                if(v.prediction==="BIG") e.falsePositive++; else e.falseNegative++;
+            }
+        });
+
+        // ENSEMBLE — SKIP does NOT count as win or loss
+        if(p.prediction==="SKIP"){ skips++; continue; }
+        if(p.prediction===actual){ wins++; currentLoss=0; }
+        else{ losses++; currentLoss++; if(currentLoss>maxLoss) maxLoss=currentLoss; }
+    }
+
+    const decided = wins+losses;
+    document.getElementById("btWins").innerHTML=wins;
+    document.getElementById("btLosses").innerHTML=losses;
+    document.getElementById("btAccuracy").innerHTML=
+        (decided?((wins/decided)*100).toFixed(2):"0.00")+"%";
+    document.getElementById("btMaxLoss").innerHTML=maxLoss;
+    document.getElementById("btCurrentLoss").innerHTML=currentLoss;
+    document.getElementById("btTotal").innerHTML=decided+" (skipped "+skips+")";
+
+    updateEngineWeights();
+}
+function renderEngineTable(){
+
+    let html="";
+    // show best engines first
+    const sorted=[...ENGINES].sort((a,b)=>b.score-a.score);
+
+    sorted.forEach(e=>{
+        const total=e.wins+e.losses;
+        const acc = total ? ((e.wins/total)*100).toFixed(2) : "--";
+        const mlColor = e.maxLoss<=4 ? "green" : e.maxLoss<=8 ? "orange" : "red";
+        html+=`
+        <tr style="opacity:${e.enabled?1:0.45}">
+        <td>${e.name}</td>
+        <td class="green">${e.wins}</td>
+        <td class="red">${e.losses}</td>
+        <td>${acc}%</td>
+        <td class="${mlColor}">${e.maxLoss}</td>
+        <td>${(e.reliability*100||0).toFixed(0)}%</td>
+        <td>${e.weight.toFixed(2)}</td>
+        <td>${(e.usage*100||0).toFixed(0)}%</td>
+        <td>${(e.minConfidence*100||0).toFixed(0)}%</td>
+        <td>${e.enabled?"✅":"❌"}</td>
+        </tr>`;
+    });
+
+    document.getElementById("engineTable").innerHTML=html;
+
+}
+function updateEngineWeights(){
+
+    /* SELF-LEARNING: after each backtest, recompute every reliability metric,
+       then score engines with a HEAVY penalty on max loss — per the spec goal
+       "54% acc + MaxLoss 3 beats 57% acc + MaxLoss 12". Lowest risk wins. */
+    ENGINES.forEach(engine=>{
+
+        if(engine.predictions<80){       // not enough evidence → sit out
+            engine.weight=0; engine.reliability=0; engine.score=0;
+            engine.accuracy=0; engine.enabled=false;
+            return;
+        }
+
+        const P=engine.predictions;
+        engine.accuracy      = engine.wins/P;
+        engine.avgConfidence = engine.confidenceSum/P;
+        engine.numAccuracy   = engine.numPredictions ? engine.numWins/engine.numPredictions : 0;
+        engine.usage         = engine.used/Math.max(engine.used+engine.skipped,1);
+        engine.avgStreak     = engine.streakCount ? engine.streakSum/engine.streakCount : 0;
+        engine.recoverySpeed = engine.recoveryCount ? engine.recoverySum/engine.recoveryCount : 0;
+        engine.calibrationError = engine.calibSum/P;                 // 0=perfect, →1 bad
+        engine.fpRate = engine.falsePositive/P;
+        engine.fnRate = engine.falseNegative/P;
+
+        // stability: penalise deep max-loss and high calibration error
+        engine.stability = Math.max(0, 1 - engine.maxLoss/15) * (1 - Math.min(1,engine.calibrationError));
+        engine.volatility = Math.min(1, engine.maxLoss/12);
+
+        // RELIABILITY SCORE (0..1) — accuracy edge × stability × calibration × recent
+        const edge = Math.max(0, engine.accuracy-0.5)*2;            // 0..1 above coin-flip
+        engine.reliability = Math.max(0.05,
+            0.45*edge + 0.30*engine.stability + 0.15*(1-Math.min(1,engine.calibrationError)) + 0.10*recentPerf(engine));
+
+        // FINAL ENGINE SCORE — risk-first (max-loss dominates)
+        engine.score =
+              engine.accuracy      * 30
+            + engine.reliability   * 25
+            + engine.stability     * 20
+            + Math.max(0,12-engine.maxLoss) * 3     // low max loss heavily rewarded
+            + engine.usage         * 5
+            + engine.numAccuracy   * 5
+            - engine.calibrationError * 10;
+
+        engine.weight = Math.max(0.05, engine.reliability * (1 + Math.max(0,10-engine.maxLoss)/10));
+
+        // per-engine skip threshold: reliable engines may speak with less certainty
+        engine.minConfidence = Math.min(0.90, 0.55 + (1-engine.reliability)*0.25);
+    });
+
+    // rank by risk-first score; enable only the proven top engines
+    ENGINES.sort((a,b)=>b.score-a.score);
+    const eligible = ENGINES.filter(e=>e.predictions>=80 && e.accuracy>0.5);
+    ENGINES.forEach(e=>{ e.enabled = eligible.includes(e) && ENGINES.indexOf(e)<12; });
+
+    // SELF-TUNE the ensemble skip threshold toward the best risk/coverage balance:
+    // if the enabled set has high max loss, demand more agreement (skip more).
+    const on = ENGINES.filter(e=>e.enabled);
+    if(on.length){
+        const worstML = Math.max(...on.map(e=>e.maxLoss));
+        SKIP_THRESHOLD = Math.min(0.75, Math.max(0.58, 0.58 + worstML*0.01));
+    }
+
+    renderEngineTable();
+
+}
+/* ── ENGINE REGISTRATION (fixed: each engine registers exactly once) ──
+   Previously the window loop nested the single-instance builders inside it,
+   registering NumberProbability/Gap/Markov2/Markov3/etc. 6× as duplicates. */
+for(let len=2;len<=MAX_PATTERN_LENGTH;len++) buildPatternEngine(len);
+
+const WINDOWS=[5,10,20,30,50,100];
+WINDOWS.forEach(w=>buildWindowEngine(w));
+
+buildNumberProbabilityEngine();
+buildGapEngine();
+buildMarkov2Engine();
+buildMarkov3Engine();
+
+for(let len=2;len<=5;len++) buildNumberPatternEngine(len);
+
+[10,20,30].forEach(w=>buildNumberFrequencyEngine(w));
+buildNumberGapProfileEngine();
+
+[10,20,30,50].forEach(w=>buildFrequencyEngine(w));
+function trainAI(){
+
+    if(cleanRows.length<100){
+
+        alert("Need at least 100 rows");
+
+        return;
+
+    }
+
+    AI.trained=false;
+
+    AI.transition={};
+    AI.patterns = {};
+    AI.windowModels={};
+    AI.frequency.fill(0);
+
+    AI.bsFrequency.BIG=0;
+    AI.bsFrequency.SMALL=0;
+
+    /* OUT-OF-SAMPLE: fit every model on the TRAIN split only (first 80%),
+       so the backtest scores/selects engines on UNSEEN validation data.
+       cleanRows is temporarily pointed at TRAIN_DATA, then restored. */
+    splitDataset();
+    const _ALLROWS = cleanRows;
+    cleanRows = TRAIN_DATA;
+
+    //------------------------------------------------
+    // Number Frequency
+    //------------------------------------------------
+
+    cleanRows.forEach(r=>{
+
+        AI.frequency[r.number]++;
+
+        AI.bsFrequency[r.bs]++;
+
+    });
+    AI.numberTransition={};
+
+    for(let i=1;i<cleanRows.length;i++){
+
+        const prev=cleanRows[i-1].number;
+
+        const next=cleanRows[i].number;
+
+        if(!AI.numberTransition[prev]){
+
+            AI.numberTransition[prev]=
+            new Array(10).fill(0);
+
+        }
+
+        AI.numberTransition[prev][next]++;
+
+    }
+
+    AI.totalRows=cleanRows.length;
+
+    /* de-duplicated training (previously every single-model trainer ran 6×
+       inside the window loop — 6× the work on 100k rows). Each runs once. */
+    for(let len=2;len<=15;len++) trainPattern(len);
+
+    [5,10,20,30,50,100].forEach(w=>trainWindow(w));
+
+    trainNumberProbability();
+    trainGap();
+    trainMarkov2();
+    trainMarkov3();
+
+    AI.frequencyModels={};
+    [10,20,30,50].forEach(w=>trainFrequency(w));
+
+    for(let len=2;len<=5;len++) trainNumberPattern(len);
+
+    [10,20,30].forEach(w=>trainNumberFrequency(w));
+    trainNumberGapProfile();
+
+    // restore the full dataset for live prediction / preview
+    cleanRows = _ALLROWS;
+
+    AI.trained=true;
+    console.log("AI trained on",TRAIN_DATA.length,"rows | validation",VALIDATION_DATA.length);
+    alert("AI Trained — models fit on 80% train split, ready for out-of-sample backtest.");
+
+}
+function buildNumberGapProfileEngine(){
+
+    addEngine(
+
+        "NumberGapProfile",
+
+        function(history){
+
+            let lastSeen=new Array(10).fill(-1);
+
+            for(let i=0;i<history.length;i++){
+
+                lastSeen[history[i].number]=i;
+
+            }
+
+            let gaps=[];
+
+            for(let n=0;n<10;n++){
+
+                if(lastSeen[n]==-1)
+
+                    gaps.push(99);
+
+                else
+
+                    gaps.push(history.length-lastSeen[n]);
+
+            }
+
+            const key=gaps.join("-");
+
+            const arr=
+
+            AI.numberGapProfiles[key];
+
+            if(!arr)
+
+                return null;
+
+            let best=-1;
+
+            let predicted=0;
+
+            for(let i=0;i<10;i++){
+
+                if(arr[i]>best){
+
+                    best=arr[i];
+
+                    predicted=i;
+
+                }
+
+            }
+
+            return{
+
+                prediction:
+
+                predicted>=5
+
+                ?
+
+                "BIG"
+
+                :
+
+                "SMALL",
+
+                confidence:
+
+                best/
+
+                Math.max(
+
+                    arr.reduce((a,b)=>a+b,0),
+
+                    1
+
+                )
+
+            };
+
+        }
+
+    );
+
+}
+function buildNumberFrequencyEngine(window){
+
+    addEngine(
+
+        "NumberFrequency"+window,
+
+        function(history){
+
+            if(history.length<window)
+
+                return null;
+
+            let freq=new Array(10).fill(0);
+
+            for(let i=history.length-window;i<history.length;i++){
+
+                freq[history[i].number]++;
+
+            }
+
+            const key=freq.join("-");
+
+            const arr=
+
+            AI.numberFrequencyModels[window][key];
+
+            if(!arr)
+
+                return null;
+
+            let best=-1;
+
+            let predicted=0;
+
+            for(let i=0;i<10;i++){
+
+                if(arr[i]>best){
+
+                    best=arr[i];
+
+                    predicted=i;
+
+                }
+
+            }
+
+            return{
+
+                prediction:
+
+                predicted>=5
+
+                ?
+
+                "BIG"
+
+                :
+
+                "SMALL",
+
+                confidence:
+
+                best/
+
+                Math.max(
+
+                    arr.reduce((a,b)=>a+b,0),
+
+                    1
+
+                )
+
+            };
+
+        }
+
+    );
+
+}
+function buildNumberPatternEngine(length){
+
+    addEngine(
+
+        "NumberPattern"+length,
+
+        function(history){
+
+            if(history.length<length)
+
+                return null;
+
+            const key=
+
+            history
+
+            .slice(-length)
+
+            .map(x=>x.number)
+
+            .join("-");
+
+            const arr=
+
+            AI.numberPatterns[length][key];
+
+            if(!arr)
+
+                return null;
+
+            let best=-1;
+
+            let predicted=0;
+
+            for(let i=0;i<10;i++){
+
+                if(arr[i]>best){
+
+                    best=arr[i];
+
+                    predicted=i;
+
+                }
+
+            }
+
+            return{
+
+                prediction:
+
+                predicted>=5
+
+                ?
+
+                "BIG"
+
+                :
+
+                "SMALL",
+
+                confidence:
+
+                best/
+
+                Math.max(
+
+                    arr.reduce((a,b)=>a+b,0),
+
+                    1
+
+                )
+
+            };
+
+        }
+
+    );
+
+}
+function buildMarkov3Engine(){
+
+    addEngine(
+
+        "Markov3",
+
+        function(history){
+
+            if(history.length<3)
+                return null;
+
+            const key=
+
+            history[history.length-3].bs+
+
+            history[history.length-2].bs+
+
+            history[history.length-1].bs;
+
+            const node=AI.markov3[key];
+
+            if(!node)
+                return null;
+
+            return{
+
+                prediction:
+
+                node.BIG>=node.SMALL
+
+                ?
+
+                "BIG"
+
+                :
+
+                "SMALL",
+
+                confidence:
+
+                nodeConfidence(node)
+
+            };
+
+        }
+
+    );
+
+}
+function buildMarkov2Engine(){
+
+    addEngine(
+
+        "Markov2",
+
+        function(history){
+
+            if(history.length<2)
+                return null;
+
+            const key=
+
+            history[history.length-2].bs+
+
+            history[history.length-1].bs;
+
+            const node=
+
+            AI.markov2[key];
+
+            if(!node)
+                return null;
+
+            return{
+
+                prediction:
+
+                node.BIG>=node.SMALL
+
+                ?
+
+                "BIG"
+
+                :
+
+                "SMALL",
+
+                confidence:
+
+                nodeConfidence(node)
+
+            };
+
+        }
+
+    );
+
+}
+function buildGapEngine(){
+
+    addEngine(
+
+        "Gap",
+
+        function(history){
+
+            let gap=0;
+
+            for(let i=history.length-2;i>=0;i--){
+
+                if(history[i].bs==history[history.length-1].bs){
+
+                    gap=history.length-1-i;
+
+                    break;
+
+                }
+
+            }
+
+            const node=
+
+            AI.gapModels[gap];
+
+            if(!node)
+                return null;
+
+            return{
+
+                prediction:
+
+                node.BIG>=node.SMALL
+
+                ?
+
+                "BIG"
+
+                :
+
+                "SMALL",
+
+                confidence:
+
+                nodeConfidence(node)
+
+            };
+
+        }
+
+    );
+
+}
+function buildFrequencyEngine(window){
+
+    addEngine(
+
+        "Frequency"+window,
+
+        function(history){
+
+            if(history.length<window)
+                return null;
+
+            let big=0;
+            let small=0;
+
+            for(let i=history.length-window;i<history.length;i++){
+
+                if(history[i].bs=="BIG")
+                    big++;
+                else
+                    small++;
+
+            }
+
+            const diff=big-small;
+
+            const model=
+
+            AI.frequencyModels[window];
+
+            if(!model)
+                return null;
+
+            const node=model[diff];
+
+            if(!node)
+                return null;
+
+            return{
+
+            prediction:
+
+            node.BIG>=node.SMALL
+
+            ?
+
+            "BIG"
+
+            :
+
+            "SMALL",
+
+            confidence:
+
+            nodeConfidence(node)
+
+            };
+
+        }
+
+    );
+
+}
+function buildNumberProbabilityEngine(){
+
+    addEngine(
+
+        "NumberProbability",
+
+        function(history){
+
+            if(history.length<2)
+                return null;
+
+            const last=
+
+            history[history.length-1].number;
+
+            const arr=
+
+            AI.numberProbability[last];
+
+            if(!arr)
+                return null;
+
+            let max=-1;
+
+            let predicted=0;
+
+            for(let i=0;i<10;i++){
+
+                if(arr[i]>max){
+
+                    max=arr[i];
+
+                    predicted=i;
+
+                }
+
+            }
+
+            return{
+
+            prediction:
+
+            predicted>=5
+
+            ?
+
+            "BIG"
+
+            :
+
+            "SMALL",
+
+            confidence:
+
+            max/
+
+            Math.max(
+
+            arr.reduce((a,b)=>a+b,0),
+
+            1
+
+            )
+
+            };
+
+        }
+
+    );
+
+}
+// =======================================
+// AI PREDICTOR V1
+// =======================================
+
+function trainPattern(length){
+
+    AI.patterns[length]={};
+
+    for(let i=length;i<cleanRows.length;i++){
+
+        const key=cleanRows
+        .slice(i-length,i)
+        .map(x=>x.bs)
+        .join("");
+
+        const next=cleanRows[i].bs;
+
+        if(!AI.patterns[length][key]){
+
+            AI.patterns[length][key]={
+
+                BIG:0,
+
+                SMALL:0
+
+            };
+
+        }
+
+        AI.patterns[length][key][next]++;
+
+    }
+
+}
+
+function winner(obj){
+
+    if(!obj) return null;
+
+    return obj.BIG>=obj.SMALL ? "BIG" : "SMALL";
+
+}
+
+function confidence(obj){
+
+    if(!obj) return 0;
+
+    const t=obj.BIG+obj.SMALL;
+
+    if(t==0) return 0;
+
+    return Math.round(Math.max(obj.BIG,obj.SMALL)/t*100);
+
+}
+function nodeConfidence(node){
+
+    if(!node)
+        return 0;
+
+    const total=node.BIG+node.SMALL;
+
+    if(total==0)
+        return 0;
+
+    return Math.max(node.BIG,node.SMALL)/total;
+
+}
+
+
+/* ── WEIGHTED CONFIDENCE VOTING + NUMBER-FIRST + SKIP ──────────────
+   Final vote = weight × confidence × reliability × recentPerformance.
+   The ensemble ABSTAINS (SKIP) on: too few engines (unknown region),
+   engine disagreement, or low ensemble confidence. */
+let SKIP_THRESHOLD = 0.62;         // ensemble confidence gate (self-tuned in backtest)
+const MIN_VOTES = 3;
+const MIN_AGREEMENT = 0.58;
+
+function recentPerf(e){
+    if(!e.recent || !e.recent.length) return 0.5;
+    let s=0; for(const r of e.recent) s+=r;
+    return s/e.recent.length;
+}
+
+function predictNext(history){
+
+    let big=0, small=0;
+    let votes=[];
+    const numVotes=new Array(10).fill(0);
+    let anyNumber=false;
+
+    ENGINES.forEach(engine=>{
+        if(!engine.enabled) return;
+
+        let result;
+        try { result = engine.predict(history); } catch(err){ result=null; }
+        if(!result){ engine.skipped++; return; }
+
+        const conf = result.confidence || 0;
+        if(conf < engine.minConfidence){ engine.skipped++; return; }
+
+        const pred = result.prediction || (result.number!=null ? bsOf(result.number) : null);
+        if(!pred){ engine.skipped++; return; }
+
+        engine.used++;
+
+        // weighted-confidence factors
+        const w = engine.weight * conf * (engine.reliability||1) * Math.max(0.3, recentPerf(engine));
+
+        votes.push({ engine, prediction:pred, number:result.number, confidence:conf, weight:w, metadata:result.metadata });
+        if(pred==="BIG") big+=w; else small+=w;
+        if(result.number!=null){ anyNumber=true; numVotes[result.number]+=w; }
+    });
+
+    // SKIP MODEL 1 — unknown region / too few engines participating
+    if(votes.length < MIN_VOTES){
+        return { prediction:"SKIP", reason:"too few engines ("+votes.length+")",
+                 confidence:0, scoreBig:big, scoreSmall:small, votes, agreement:0, contributors:[] };
+    }
+
+    const total = big+small || 1;
+    const agreement = Math.max(big,small)/total;      // 0.5 .. 1
+    let side = big>=small ? "BIG" : "SMALL";
+
+    // NUMBER-FIRST — strongest weighted digit; follow it if it out-votes the BS side
+    let number=null;
+    if(anyNumber){
+        let bd=0; for(let d=1;d<10;d++) if(numVotes[d]>numVotes[bd]) bd=d;
+        const numTot=numVotes.reduce((a,b)=>a+b,0)||1;
+        const numConf=numVotes[bd]/numTot;
+        if(numConf>0.25){
+            number=bd;
+            if(bsOf(bd)!==side && numConf>agreement) side=bsOf(bd);
+        }
+    }
+
+    // SKIP MODELS 2 & 3 — disagreement / low ensemble confidence
+    let reason=null;
+    if(agreement < MIN_AGREEMENT) reason="engine disagreement";
+    else if(agreement < SKIP_THRESHOLD) reason="low confidence";
+
+    const contributors = votes.filter(v=>v.prediction===side)
+        .sort((a,b)=>b.weight-a.weight).slice(0,5)
+        .map(v=>({ name:v.engine.name, conf:Math.round(v.confidence*100), weight:+v.weight.toFixed(2) }));
+
+    return {
+        prediction: reason ? "SKIP" : side,
+        side, number, reason,
+        confidence: Math.round(agreement*100),
+        scoreBig:big, scoreSmall:small,
+        votes, agreement, contributors
+    };
+}
+function runPrediction(){
+
+    let p=predictNext(cleanRows);
+
+    if(!p){
+        alert("Train AI First");
+        return;
+    }
+
+    const el=document.getElementById("prediction");
+    if(p.prediction==="SKIP"){
+        el.innerHTML="SKIP";
+        el.className="card-value orange";
+        document.getElementById("confidence").innerHTML="— ("+(p.reason||"abstain")+")";
+    } else {
+        const numTxt = p.number!=null ? " #"+p.number : "";
+        el.innerHTML=p.prediction+numTxt;
+        el.className="card-value "+(p.prediction==="BIG"?"green":"blue");
+        document.getElementById("confidence").innerHTML=p.confidence+"%";
+    }
+
+    document.getElementById("bigScore").innerHTML=(p.scoreBig||0).toFixed(2);
+    document.getElementById("smallScore").innerHTML=(p.scoreSmall||0).toFixed(2);
+
+    // explanation: top contributing engines (spec: prediction explanation)
+    if(p.contributors && p.contributors.length){
+        console.log("Top contributors →", p.contributors.map(c=>c.name+" ("+c.conf+"%)").join(", "));
+    }
+}
+let rawRows = [];
+let cleanRows = [];
+let uploadedFiles = [];
+
+// ---------- Elements ----------
+
+const uploadBox = document.querySelector(".upload");
+const fileInput = document.getElementById("csvFiles");
+const previewBody = document.getElementById("previewBody");
+
+const filesLoaded = document.getElementById("filesLoaded");
+const rowsLoaded = document.getElementById("rowsLoaded");
+const status = document.getElementById("status");
+
+// ---------- Drag Drop ----------
+
+uploadBox.addEventListener("dragover",e=>{
+    e.preventDefault();
+    uploadBox.style.borderColor="#22c55e";
+});
+
+uploadBox.addEventListener("dragleave",()=>{
+    uploadBox.style.borderColor="#333";
+});
+
+uploadBox.addEventListener("drop",e=>{
+    e.preventDefault();
+
+    uploadBox.style.borderColor="#333";
+
+    loadFiles(e.dataTransfer.files);
+});
+
+fileInput.addEventListener("change",()=>{
+
+    loadFiles(fileInput.files);
+
+});
+
+// ---------- Load Files ----------
+
+async function loadFiles(files){
+
+    if(!files.length)
+        return;
+
+    status.innerHTML="Loading...";
+
+    for(const file of files){
+
+        uploadedFiles.push(file.name);
+
+        const text=await file.text();
+
+        parseCSV(text,file.name);
+
+    }
+
+   updateStats();
+
+    splitDataset();
+
+    renderPreview();
+
+    status.innerHTML = "Ready";
+
+}
+
+// ---------- CSV Parser ----------
+
+function parseCSV(text,fileName){
+
+    const lines=text.split(/\r?\n/);
+
+    for(let line of lines){
+
+        line=line.trim();
+
+        if(!line)
+            continue;
+
+        const cols=line.split(",");
+
+        if(cols.length<2)
+            continue;
+
+        let period=cols[0].replace(/"/g,"").trim();
+
+        let number=parseInt(cols[1]);
+
+        if(isNaN(number))
+            continue;
+
+        rawRows.push({
+
+            period,
+
+            number,
+
+            bs:number>=5?"BIG":"SMALL",
+
+            color:getColor(number),
+
+            oddEven:number%2==0?"EVEN":"ODD",
+
+            file:fileName
+
+        });
+
+    }
+
+}
+
+// ---------- Color ----------
+
+function getColor(num){
+
+    if([1,3,7,9].includes(num))
+        return "GREEN";
+
+    if([2,4,6,8].includes(num))
+        return "RED";
+
+    if(num==0)
+        return "RED/VIOLET";
+
+    if(num==5)
+        return "GREEN/VIOLET";
+
+    return "-";
+
+}
+
+// ---------- Preview ----------
+function renderPreview(){
+
+    previewBody.innerHTML="";
+
+    if(cleanRows.length===0){
+
+        previewBody.innerHTML=`
+        <tr>
+        <td colspan="6" class="empty">
+        No CSV Loaded
+        </td>
+        </tr>
+        `;
+
+        return;
+
+    }
+
+    cleanRows.slice(0,200).forEach(r=>{
+
+        previewBody.innerHTML+=`
+
+        <tr>
+
+        <td>${r.period}</td>
+
+        <td>${r.number}</td>
+
+        <td>${r.bs}</td>
+
+        <td>${r.color}</td>
+
+        <td>${r.oddEven}</td>
+
+        <td>${r.file}</td>
+
+        </tr>
+
+        `;
+
+    });
+
+}
+
+// ---------- Stats ----------
+
+function updateStats(){
+
+    document.getElementById("status").innerHTML="Cleaning...";
+
+    const map = new Map();
+
+    let invalid = 0;
+
+    rawRows.forEach(r=>{
+
+        if(!r.period || isNaN(r.number)){
+
+            invalid++;
+            return;
+
+        }
+
+        map.set(r.period,r);
+
+    });
+
+    cleanRows = [...map.values()];
+
+    cleanRows.sort((a,b)=>{
+
+        try{
+
+            return BigInt(a.period) > BigInt(b.period) ? 1 : -1;
+
+        }catch{
+
+            return a.period.localeCompare(b.period);
+
+        }
+
+    });
+
+    const duplicateCount = rawRows.length-cleanRows.length;
+
+    document.getElementById("filesLoaded").innerHTML=[...new Set(uploadedFiles)].length;
+
+    document.getElementById("rowsLoaded").innerHTML=rawRows.length;
+
+    document.getElementById("duplicates").innerHTML=duplicateCount;
+
+    document.getElementById("validRows").innerHTML=cleanRows.length;
+
+    document.getElementById("invalidRows").innerHTML=invalid;
+
+    document.getElementById("status").innerHTML="Ready";
+
+    renderPreview();
+
+}
+document.querySelectorAll(".secondary")[1].onclick=function(){
+    trainAI();
+    runPrediction();
+    if(TRAIN_DATA.length===0){
+
+        alert("Nothing to export");
+        return;
+
+    }
+
+    let csv="period,number,bigSmall,color,oddEven,file\n";
+
+    TRAIN_DATA.forEach(r=>{
+
+        csv+=`${r.period},${r.number},${r.bs},${r.color},${r.oddEven},${r.file}\n`;
+
+    });
+
+    const blob=new Blob([csv],{type:"text/csv"});
+
+    const a=document.createElement("a");
+
+    a.href=URL.createObjectURL(blob);
+
+    a.download="KINGPIN_CLEAN_DATASET.csv";
+
+    a.click();
+
+}
+document.getElementById("engineCount").innerHTML=
+
+ENGINES.length;
+</script>
+</body>
+
+</html>

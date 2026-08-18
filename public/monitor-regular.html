@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Regular Traders Monitor</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+:root{
+  --bg:#09090f;--s1:#111118;--s2:#18181f;--bdr:#2a2a3a;
+  --fg:#f0f0f8;--mt:#6b7280;
+  --grn:#22c55e;--grna:rgba(34,197,94,.15);
+  --red:#ef4444;--reda:rgba(239,68,68,.15);
+  --amb:#f59e0b;--ambt:#fbbf24;--amba:rgba(245,158,11,.12);
+  --blu:#60a5fa;--blua:rgba(96,165,250,.12);
+  --pur:#a855f7;--pura:rgba(168,85,247,.15);
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+.hdr{position:sticky;top:0;z-index:30;background:rgba(9,9,15,.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--bdr);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.hdr-l{display:flex;align-items:center;gap:12px}
+.hdr-logo{width:44px;height:44px;border-radius:14px;background:var(--grna);border:1px solid rgba(34,197,94,.25);display:flex;align-items:center;justify-content:center;font-size:22px;position:relative}
+.hdr-logo::after{content:'';position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--grn);border:2px solid var(--bg);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}50%{box-shadow:0 0 0 5px rgba(34,197,94,0)}}
+.hdr-title{font-size:16px;font-weight:800;letter-spacing:-.02em}
+.hdr-sub{font-size:9px;color:var(--mt);font-family:monospace;margin-top:1px}
+.hdr-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;font-family:monospace}
+.badge.live{background:var(--grna);border:1px solid rgba(34,197,94,.2);color:var(--grn)}
+.badge.period{background:var(--s2);border:1px solid var(--bdr);color:var(--mt)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--grn);animation:blink 1.5s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.dot.red{background:var(--red);animation:none}
+.hdr-btn{padding:5px 12px;border-radius:8px;border:1px solid var(--bdr);background:var(--s2);color:var(--mt);font-size:10px;cursor:pointer;transition:all .2s;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.hdr-btn:hover{border-color:var(--grn);color:var(--grn)}
+#newDrawBar{display:none;background:linear-gradient(90deg,rgba(34,197,94,.06),rgba(34,197,94,.16),rgba(34,197,94,.06));border-bottom:1px solid rgba(34,197,94,.3);padding:6px 20px;font-size:11px;font-weight:800;color:var(--grn);letter-spacing:.1em;text-align:center;animation:drawFlash .7s ease}
+@keyframes drawFlash{0%{opacity:0;transform:scaleY(0)}40%{opacity:1;transform:scaleY(1)}100%{opacity:1}}
+.nd-num{font-size:16px;margin:0 8px;font-variant-numeric:tabular-nums}
+.nd-tag{padding:1px 8px;border-radius:4px;font-size:10px;font-weight:800}
+.nd-tag.big{background:var(--grna);color:var(--grn);border:1px solid rgba(34,197,94,.3)}
+.nd-tag.sml{background:var(--blua);color:var(--blu);border:1px solid rgba(96,165,250,.3)}
+.sumbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:6px;padding:10px 20px;background:var(--s1);border-bottom:1px solid var(--bdr)}
+.sum-item{background:var(--s2);border:1px solid var(--bdr);border-radius:10px;padding:9px 10px;text-align:center}
+.sum-item.hi{border-color:rgba(168,85,247,.4);background:linear-gradient(135deg,rgba(168,85,247,.07),var(--s2))}
+.sum-item.g{border-color:rgba(34,197,94,.3)}
+.sum-item.r{border-color:rgba(239,68,68,.3)}
+.sum-v{font-size:18px;font-weight:900;line-height:1;transition:all .3s}
+.sum-v.pop{animation:numPop .35s ease}
+@keyframes numPop{0%{transform:scale(1.3);color:#fff}100%{transform:scale(1)}}
+.sum-l{font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.13em;color:var(--mt);margin-top:3px}
+.sum-sub{font-size:9px;color:var(--mt);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tabs{display:flex;gap:6px;padding:12px 20px 0;border-bottom:1px solid var(--bdr);background:var(--s1);overflow-x:auto}
+.tab{padding:8px 14px;border-radius:10px 10px 0 0;font-size:11px;font-weight:700;cursor:pointer;border:1px solid transparent;border-bottom:none;color:var(--mt);transition:all .2s;white-space:nowrap;flex-shrink:0}
+.tab.active{background:var(--bg);border-color:var(--bdr);color:var(--fg)}
+.main{padding:12px 20px 60px;max-width:1700px;margin:0 auto}
+#atBanner{display:none;margin:12px 20px 0;background:linear-gradient(135deg,rgba(251,191,36,.08),rgba(251,191,36,.02));border:1px solid rgba(251,191,36,.3);border-radius:14px;padding:14px 18px;position:relative;overflow:hidden}
+#atBanner::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#fbbf24,transparent)}
+.at-ban-body{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.at-ban-emo{width:48px;height:48px;border-radius:12px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+.at-ban-info{flex:1;min-width:160px}
+.at-ban-name{font-size:17px;font-weight:900;letter-spacing:-.01em}
+.at-ban-acc{font-size:26px;font-weight:900;color:#fbbf24;line-height:1;margin-top:2px}
+.at-ban-wl{font-size:10px;color:var(--mt);margin-top:2px}
+.at-ban-stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.at-ban-stat{text-align:center;min-width:52px;background:var(--s2);border-radius:8px;padding:6px 8px}
+.at-ban-sv{font-size:15px;font-weight:900;line-height:1}
+.at-ban-sl{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--mt);margin-top:2px}
+#champBanner::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--pur),transparent)}
+.champ-title{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.2em;color:var(--pur);margin-bottom:10px}
+.champ-body{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.champ-emo{width:54px;height:54px;border-radius:14px;background:var(--pura);border:1px solid rgba(168,85,247,.3);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
+.champ-info{flex:1;min-width:180px}
+.champ-name{font-size:20px;font-weight:900;letter-spacing:-.02em}
+.champ-acc{font-size:30px;font-weight:900;color:var(--grn);line-height:1;margin-top:2px}
+.champ-wl{font-size:11px;color:var(--mt);margin-top:3px}
+.champ-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px}
+.champ-stat{text-align:center;min-width:58px}
+.champ-sv{font-size:16px;font-weight:900;line-height:1}
+.champ-sl{font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--mt);margin-top:2px}
+.champ-at{background:var(--s2);border:1px solid rgba(168,85,247,.25);border-radius:12px;padding:10px 16px;min-width:155px}
+.champ-at-title{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;color:var(--pur);margin-bottom:8px}
+.champ-at-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(42,42,58,.4)}
+.champ-at-row:last-child{border-bottom:none}
+.champ-at-k{font-size:9px;color:var(--mt)}
+.champ-at-v{font-size:11px;font-weight:800}
+#page-dashboard .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:10px}
+.sec-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.2em;color:var(--mt);padding:6px 0 8px;border-bottom:1px solid var(--bdr);margin-bottom:10px}
+.tcard{background:var(--s1);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;transition:border-color .3s,box-shadow .3s}
+.tcard.wg{border-color:rgba(34,197,94,.45);box-shadow:0 0 14px rgba(34,197,94,.07)}
+.tcard.lg{border-color:rgba(239,68,68,.4)}
+.tc-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--bdr)}
+.tc-emo{width:42px;height:42px;border-radius:11px;background:var(--grna);border:1px solid rgba(34,197,94,.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.tc-info{flex:1;min-width:0}
+.tc-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tc-acc{font-size:18px;font-weight:900;line-height:1;margin-top:2px}
+.tc-wl{font-size:9px;color:var(--mt);margin-top:2px}
+.tc-badge{font-size:8px;font-weight:700;text-transform:uppercase;padding:2px 6px;border-radius:4px;letter-spacing:.08em;flex-shrink:0}
+.tc-badge.win{background:var(--grna);color:var(--grn);border:1px solid rgba(34,197,94,.2)}
+.tc-badge.loss{background:var(--reda);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+.tc-badge.none{background:var(--s2);color:var(--mt);border:1px solid var(--bdr)}
+.tc-stats{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid var(--bdr)}
+.tc-stat{padding:8px;text-align:center;border-right:1px solid var(--bdr)}
+.tc-stat:last-child{border-right:none}
+.tc-sv{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+.tc-sl{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--mt);margin-top:2px}
+.bet-row{padding:8px 14px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;gap:6px}
+.bet-dots{display:flex;gap:2px}
+.bet-dot{width:15px;height:15px;border-radius:4px;border:1px solid var(--bdr);background:var(--s2);font-size:6.5px;font-weight:800;display:flex;align-items:center;justify-content:center;color:var(--mt)}
+.bet-dot.active{background:rgba(245,158,11,.2);border-color:rgba(245,158,11,.4);color:var(--ambt)}
+.bet-dot.done{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.3);color:var(--red)}
+.bet-info{font-size:10px;font-weight:800;color:var(--ambt)}
+.bet-label{font-size:8px;color:var(--mt);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.bars{display:flex;align-items:center;gap:2px;padding:8px 14px;height:28px}
+.bar{flex:1;border-radius:3px;transition:all .3s}
+.bar.w{background:rgba(34,197,94,.5);height:14px}
+.bar.l{background:rgba(239,68,68,.35);height:7px}
+.tc-next{display:flex;align-items:center;justify-content:space-between;padding:9px 14px}
+.np-l{font-size:9px;color:var(--mt);font-weight:700;text-transform:uppercase;letter-spacing:.1em}
+.np-v{font-size:12px;font-weight:900;padding:3px 10px;border-radius:6px}
+.np-v.big{background:var(--grna);color:var(--grn);border:1px solid rgba(34,197,94,.3)}
+.np-v.sml{background:var(--blua);color:var(--blu);border:1px solid rgba(96,165,250,.3)}
+.np-conf{font-size:10px;color:var(--mt)}
+#page-history{display:none}
+.hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px}
+.hist-card{background:var(--s1);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden}
+.hist-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--bdr);background:var(--s2)}
+.hist-emo{font-size:18px}
+.hist-name{font-size:12px;font-weight:700;flex:1}
+.hist-acc{font-size:12px;font-weight:800}
+.hsr{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;border-bottom:1px solid var(--bdr)}
+.hsr-cell{padding:7px 10px;text-align:center;border-right:1px solid var(--bdr)}
+.hsr-cell:last-child{border-right:none}
+.hsr-v{font-size:13px;font-weight:800}
+.hsr-l{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--mt);margin-top:2px}
+.streak-chart{display:flex;gap:2px;flex-wrap:wrap;padding:10px 14px}
+.streak-dot{width:10px;height:10px;border-radius:2px}
+.streak-dot.w{background:var(--grn)}
+.streak-dot.l{background:var(--red)}
+.res-tbl{width:100%;border-collapse:collapse}
+.res-tbl th{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--mt);padding:6px 10px;text-align:left;border-bottom:1px solid var(--bdr);background:var(--s2)}
+.res-tbl td{font-size:10px;padding:5px 10px;border-bottom:1px solid rgba(42,42,58,.3);font-family:monospace}
+.res-tbl tr:last-child td{border-bottom:none}
+.res-tbl tr:hover td{background:var(--s2)}
+#page-alltime{display:none}
+.at-table{width:100%;border-collapse:collapse;background:var(--s1);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden}
+.at-table th{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.13em;color:var(--mt);padding:10px 14px;text-align:left;border-bottom:1px solid var(--bdr);background:var(--s2)}
+.at-table td{font-size:12px;padding:9px 14px;border-bottom:1px solid rgba(42,42,58,.3)}
+.at-table tr:last-child td{border-bottom:none}
+.at-table tr:hover td{background:var(--s2)}
+.at-table .crown td{background:rgba(168,85,247,.06);border-left:2px solid var(--pur)}
+#page-csv{display:none}
+.csv-list{display:flex;flex-direction:column;gap:8px}
+.csv-item{background:var(--s1);border:1px solid var(--bdr);border-radius:10px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.csv-name{font-size:12px;font-family:monospace}
+.csv-btn{padding:5px 14px;border-radius:7px;background:var(--grna);border:1px solid rgba(34,197,94,.2);color:var(--grn);font-size:11px;font-weight:700;text-decoration:none}
+.tag{display:inline-flex;align-items:center;justify-content:center;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:800;text-transform:uppercase}
+.tag.win{background:var(--grna);color:var(--grn);border:1px solid rgba(34,197,94,.2)}
+.tag.loss{background:var(--reda);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+.tag.big{background:var(--grna);color:var(--grn);border:1px solid rgba(34,197,94,.2)}
+.tag.sml{background:var(--blua);color:var(--blu);border:1px solid rgba(96,165,250,.2)}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--s2);border:1px solid var(--bdr);border-radius:10px;padding:10px 16px;font-size:12px;z-index:99;opacity:0;transition:opacity .3s;pointer-events:none;max-width:300px}
+.toast.show{opacity:1}
+.loading{text-align:center;padding:70px;color:var(--mt)}
+.spinner{width:32px;height:32px;border:3px solid var(--bdr);border-top-color:var(--grn);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.acc-hi{color:var(--grn)}.acc-mid{color:var(--ambt)}.acc-lo{color:var(--red)}
+.streak-pos{color:var(--grn)}.streak-neg{color:var(--red)}.streak-zero{color:var(--mt)}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-l">
+    <div class="hdr-logo">🐯</div>
+    <div>
+      <div class="hdr-title">Regular Traders Monitor</div>
+      <div class="hdr-sub" id="hdrSub">djb2 hash &middot; 20 traders &middot; 30s &middot; connecting&hellip;</div>
+    </div>
+  </div>
+  <div class="hdr-r">
+    <span class="badge live"><span class="dot" id="connDot"></span><span id="connLabel">Connecting&hellip;</span></span>
+    <span class="badge period">Period: <span id="periodEl">&mdash;</span></span>
+    <span class="badge period">Updated: <span id="updatedEl">&mdash;</span></span>
+    <span class="badge period">Next: <span id="cdEl" style="color:var(--ambt)">&mdash;s</span></span>
+    <button class="hdr-btn" onclick="resetSession()">&#8634; Reset</button>
+    <a href="/monitor-pro" class="hdr-btn" style="color:var(--ambt)">&rarr; Pro</a>
+  </div>
+</header>
+
+<div id="newDrawBar">
+  &#127920; NEW DRAW &middot; Period <span id="ndPeriod">&mdash;</span>
+  &middot; #<span class="nd-num" id="ndNum">&mdash;</span>
+  &middot; <span class="nd-tag" id="ndTag">&mdash;</span>
+  &nbsp;&middot;&nbsp;
+  <span id="ndWin" style="color:var(--grn)">&mdash; WIN</span>
+  <span style="color:var(--mt)"> / </span>
+  <span id="ndLoss" style="color:var(--red)">&mdash; LOSS</span>
+</div>
+
+<div class="sumbar" id="sumbar">
+  <div class="sum-item g">
+    <div class="sum-v acc-hi" id="s-acc">&mdash;%</div>
+    <div class="sum-l">Session Acc</div>
+    <div class="sum-sub" id="s-acc-sub">&mdash; W / &mdash; L</div>
+  </div>
+  <div class="sum-item g">
+    <div class="sum-v" style="color:var(--grn)" id="s-wins">&mdash;</div>
+    <div class="sum-l">Total Wins</div>
+  </div>
+  <div class="sum-item r">
+    <div class="sum-v" style="color:var(--red)" id="s-losses">&mdash;</div>
+    <div class="sum-l">Total Losses</div>
+  </div>
+  <div class="sum-item g">
+    <div class="sum-v acc-hi" id="s-mws">&mdash;</div>
+    <div class="sum-l">Max Win Streak</div>
+    <div class="sum-sub" id="s-mws-who">&mdash;</div>
+  </div>
+  <div class="sum-item r">
+    <div class="sum-v" style="color:var(--red)" id="s-mls">&mdash;</div>
+    <div class="sum-l">Max Loss Streak</div>
+    <div class="sum-sub" id="s-mls-who">&mdash;</div>
+  </div>
+  <div class="sum-item">
+    <div class="sum-v" style="color:var(--ambt)" id="s-maxbet">&mdash;x</div>
+    <div class="sum-l">Max Bet Reached</div>
+    <div class="sum-sub">martingale peak</div>
+  </div>
+  <div class="sum-item">
+    <div class="sum-v" id="s-units">&mdash;</div>
+    <div class="sum-l">Net Units</div>
+    <div class="sum-sub" id="s-units-sub">virtual P&amp;L</div>
+  </div>
+  <div class="sum-item">
+    <div class="sum-v" style="color:var(--mt);font-size:14px" id="s-time">&mdash;</div>
+    <div class="sum-l">Session Time</div>
+  </div>
+</div>
+
+<div id="atBanner">
+  <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.2em;color:#fbbf24;margin-bottom:10px">🏆 TOP 5 ALL-TIME TRADERS &mdash; <span style="font-weight:400;color:var(--mt)">ranked by accuracy</span></div>
+  <div id="atTop5" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px"></div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showPage('dashboard')" id="tab-dashboard">&#128202; Dashboard</div>
+  <div class="tab" onclick="showPage('history')" id="tab-history">&#128203; History</div>
+  <div class="tab" onclick="showPage('alltime')" id="tab-alltime">&#127942; All-Time</div>
+  <div class="tab" onclick="showPage('csv')" id="tab-csv">&#128229; CSV</div>
+</div>
+
+<div class="main">
+  <div id="page-dashboard">
+    <div id="loadingEl" class="loading"><div class="spinner"></div><div>Connecting to monitor engine&hellip;</div></div>
+    <div class="sec-label" id="otherLabel" style="display:none">ALL TRADERS &mdash; RANKED BY ACCURACY</div>
+    <div class="grid" id="dashGrid" style="display:none"></div>
+  </div>
+
+  <div id="page-history">
+    <div class="hist-grid" id="histGrid"><div class="loading" style="padding:40px"><div class="spinner"></div></div></div>
+  </div>
+
+  <div id="page-alltime">
+    <div id="atLoading" class="loading" style="padding:40px"><div class="spinner"></div><div>Loading all-time stats&hellip;</div></div>
+    <table class="at-table" id="atTable" style="display:none">
+      <thead><tr><th>#</th><th>Trader</th><th>All-Time W</th><th>All-Time L</th><th>All-Time Acc</th><th>Best Acc Ever</th></tr></thead>
+      <tbody id="atBody"></tbody>
+    </table>
+  </div>
+
+  <div id="page-csv">
+    <div class="csv-list" id="csvList"><div class="loading" style="padding:40px"><div class="spinner"></div></div></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const socket = io();
+let sessions=[],nextPreds=[],currentPeriod='—',lastNumber=null,lastSize=null,alltimeData={},lastUpdateTime=null,sessionStartTime=null;
+const PAGES=['dashboard','history','alltime','csv'];
+
+socket.on('connect',()=>{
+  document.getElementById('connDot').classList.remove('red');
+  document.getElementById('connLabel').textContent='Live';
+  document.getElementById('hdrSub').textContent='djb2 hash · 20 traders · 30s · connected ✅';
+  socket.emit('monitor:join',{formula:'regular'});
+});
+socket.on('disconnect',()=>{
+  document.getElementById('connDot').classList.add('red');
+  document.getElementById('connLabel').textContent='Disconnected';
+});
+socket.on('monitor:snapshot',data=>processData(data,false));
+socket.on('monitor:update',data=>{
+  processData(data,true);
+  flashNewDraw(data);
+  showToast('🎰 Period '+String(data.period).slice(-5)+' · '+data.number+' ('+data.size+')');
+});
+socket.on('monitor:status',({running})=>{
+  document.getElementById('connLabel').textContent=running?'Live':'Stopped';
+  const dot=document.getElementById('connDot');
+  dot.style.background=running?'var(--grn)':'var(--red)';
+  dot.style.animation=running?'':'none';
+  showToast(running?'▶ Monitor running':'⏸ Monitor stopped');
+});
+
+function processData(data,isLive){
+  sessions=data.sessions||[];nextPreds=data.nextPredictions||[];
+  currentPeriod=data.period||'—';lastNumber=data.number??null;lastSize=data.size??null;
+  lastUpdateTime=Date.now();
+  if(!sessionStartTime&&sessions.length)sessionStartTime=Date.now();
+  document.getElementById('periodEl').textContent=String(currentPeriod).slice(-8);
+  fetch('/api/monitor/alltime').then(r=>r.json()).then(at=>{alltimeData=at;renderAll(isLive);}).catch(()=>renderAll(isLive));
+}
+
+function renderAll(anim){renderSummary(anim);renderAtBanner('regular');renderDashboard();renderHistory();renderAlltime();}
+
+setInterval(()=>{
+  const s=30-Math.floor(Date.now()/1000)%30;
+  document.getElementById('cdEl').textContent=s+'s';
+  if(lastUpdateTime){
+    const ago=Math.floor((Date.now()-lastUpdateTime)/1000);
+    document.getElementById('updatedEl').textContent=ago<3?'🟢 just now':ago+'s ago';
+  }
+  if(sessionStartTime){
+    const ms=Date.now()-sessionStartTime;
+    const hh=Math.floor(ms/3600000).toString().padStart(2,'0');
+    const mm=Math.floor((ms%3600000)/60000).toString().padStart(2,'0');
+    const ss=Math.floor((ms%60000)/1000).toString().padStart(2,'0');
+    document.getElementById('s-time').textContent=hh+':'+mm+':'+ss;
+  }
+},500);
+
+function flashNewDraw(data){
+  const bar=document.getElementById('newDrawBar');
+  document.getElementById('ndPeriod').textContent=String(data.period).slice(-5);
+  document.getElementById('ndNum').textContent=data.number;
+  const tag=document.getElementById('ndTag');tag.textContent=data.size;
+  tag.className='nd-tag '+(data.size==='BIG'?'big':'sml');
+  const wins=(data.sessions||[]).filter(s=>s.lastResult==='WIN').length;
+  const losses=(data.sessions||[]).filter(s=>s.lastResult==='LOSS').length;
+  document.getElementById('ndWin').textContent=wins+' WIN';
+  document.getElementById('ndLoss').textContent=losses+' LOSS';
+  bar.style.display='block';bar.style.animation='none';void bar.offsetWidth;
+  bar.style.animation='drawFlash .7s ease';
+  clearTimeout(bar._t);bar._t=setTimeout(()=>{bar.style.display='none';},5000);
+}
+
+function renderSummary(anim){
+  if(!sessions.length)return;
+  const tw=sessions.reduce((a,s)=>a+s.wins,0);
+  const tl=sessions.reduce((a,s)=>a+s.losses,0);
+  const tt=tw+tl;const acc=tt>0?Math.round(tw/tt*100):0;
+  const maxMgl=Math.max(...sessions.map(s=>s.maxMartingaleLevel));
+  const mwsE=sessions.reduce((b,s)=>s.maxWinStreak>b.maxWinStreak?s:b,sessions[0]);
+  const mlsE=sessions.reduce((b,s)=>s.maxLossStreak>b.maxLossStreak?s:b,sessions[0]);
+  const netUnits=sessions.reduce((a,s)=>a+s.netUnits,0);
+  sv('s-acc',acc+'%',anim);
+  document.getElementById('s-acc').className='sum-v pop '+accClass(acc);
+  document.getElementById('s-acc-sub').textContent=tw+' W / '+tl+' L';
+  sv('s-wins',tw,anim);sv('s-losses',tl,anim);
+  sv('s-mws',mwsE.maxWinStreak,anim);
+  document.getElementById('s-mws-who').textContent=mwsE.emoji+' '+mwsE.name;
+  sv('s-mls',mlsE.maxLossStreak,anim);
+  document.getElementById('s-mls-who').textContent=mlsE.emoji+' '+mlsE.name;
+  sv('s-maxbet',Math.pow(2,maxMgl)+'x',anim);
+  const nu=netUnits.toFixed(1);
+  sv('s-units',(netUnits>=0?'+':'')+nu,anim);
+  document.getElementById('s-units').style.color=netUnits>=0?'var(--grn)':'var(--red)';
+  document.getElementById('s-units-sub').textContent=netUnits>=0?'in profit ✅':'in loss ⚠️';
+}
+
+function sv(id,val,anim){
+  const el=document.getElementById(id);if(!el)return;
+  el.textContent=val;
+  if(anim){el.classList.remove('pop');void el.offsetWidth;el.classList.add('pop');}
+}
+
+function renderAtBanner(formula){
+  const entries=Object.values(alltimeData).filter(e=>e.formula===formula);
+  if(!entries.length)return;
+  const sorted=entries.sort((a,b)=>{
+    const aa=(a.totalWins+a.totalLosses)>0?a.totalWins/(a.totalWins+a.totalLosses):0;
+    const ab=(b.totalWins+b.totalLosses)>0?b.totalWins/(b.totalWins+b.totalLosses):0;
+    return ab-aa||b.totalWins-a.totalWins;
+  }).slice(0,5);
+  document.getElementById('atBanner').style.display='block';
+  const medals=['🥇','🥈','🥉','4️⃣','5️⃣'];
+  document.getElementById('atTop5').innerHTML=sorted.map((t,i)=>{
+    const total=t.totalWins+t.totalLosses;
+    const acc=total>0?Math.round(t.totalWins/total*100):0;
+    const ac=accClass(acc);
+    const acColor=ac==='acc-hi'?'var(--grn)':ac==='acc-mid'?'var(--ambt)':'var(--red)';
+    return '<div style="background:var(--s2);border:1px solid rgba(251,191,36,.2);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px">'+
+      '<div style="font-size:18px;width:24px;text-align:center;flex-shrink:0">'+medals[i]+'</div>'+
+      '<div style="font-size:22px;flex-shrink:0">'+( t.emoji||'📈')+'</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+t.name+'</div>'+
+        '<div style="font-size:10px;color:var(--mt);margin-top:1px">'+t.totalWins+'W · '+t.totalLosses+'L · '+total+' draws</div>'+
+      '</div>'+
+      '<div style="text-align:right;flex-shrink:0">'+
+        '<div style="font-size:20px;font-weight:900;color:'+acColor+'">'+acc+'%</div>'+
+        '<div style="font-size:10px;margin-top:2px">'+
+          '<span style="color:var(--grn)">🔥'+(t.bestWinStreak||0)+'</span>&nbsp;'+
+          '<span style="color:var(--red)">❌'+(t.bestLossStreak||0)+'</span>'+
+        '</div>'+
+        '<div style="font-size:9px;color:var(--mt)">Best: '+(t.bestAcc||0)+'%</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+function renderDashboard(){
+  if(!sessions.length)return;
+  document.getElementById('loadingEl').style.display='none';
+  document.getElementById('otherLabel').style.display='';
+  const g=document.getElementById('dashGrid');g.style.display='grid';
+  const sorted=[...sessions].sort((a,b)=>b.acc-a.acc||b.wins-a.wins);
+  g.innerHTML=sorted.map((s,i)=>buildCard(s,i)).join('');
+}
+
+function buildCard(s,rank){
+  const medal=rank===0?'🥇 ':rank===1?'🥈 ':rank===2?'🥉 ':'';
+  const ac=accClass(s.acc);const str=s.streak;
+  const strD=str===0?'—':str>0?'+'+str+'🔥':str+'❌';
+  const glow=s.lastResult==='WIN'?'wg':s.lastResult==='LOSS'?'lg':'';
+  const bCls=s.lastResult==='WIN'?'win':s.lastResult==='LOSS'?'loss':'none';
+  const mgl=s.martingaleLevel,maxMgl=s.maxMartingaleLevel;
+  const dots=[1,2,4,8,16,32,64,128].map((v,i)=>{
+    const c=i<mgl?'done':(i===mgl&&mgl>0)?'active':'';
+    return '<div class="bet-dot '+c+'">'+v+'</div>';
+  }).join('');
+  const bars=s.recentResults.slice(0,12).map(r=>'<div class="bar '+(r.result==='WIN'?'w':'l')+'"></div>').join('');
+  const pred=nextPreds.find(p=>p.idx===s.idx);
+  const predH=pred?'<div class="tc-next"><span class="np-l">Next Pred</span><div style="display:flex;align-items:center;gap:6px"><span class="np-v '+(pred.pred==='BIG'?'big':'sml')+'">'+pred.pred+'</span><span class="np-conf">'+pred.confidence+'%</span></div></div>':'';
+  return '<div class="tcard '+glow+'">'+
+    '<div class="tc-head"><div class="tc-emo">'+s.emoji+'</div><div class="tc-info"><div class="tc-name">'+medal+s.name+'</div><div class="tc-acc '+ac+'">'+s.acc+'%</div><div class="tc-wl">'+s.wins+'W · '+s.losses+'L · '+s.total+' total</div></div><span class="tc-badge '+bCls+'">'+(s.lastResult||'—')+'</span></div>'+
+    '<div class="tc-stats"><div class="tc-stat"><div class="tc-sv '+streakClass(str)+'">'+strD+'</div><div class="tc-sl">Streak</div></div><div class="tc-stat"><div class="tc-sv acc-hi">+'+s.maxWinStreak+'</div><div class="tc-sl">Max Win</div></div><div class="tc-stat"><div class="tc-sv" style="color:var(--red)">-'+s.maxLossStreak+'</div><div class="tc-sl">Max Loss</div></div></div>'+
+    '<div class="bet-row"><div><div class="bet-label">Bet Level</div><div class="bet-info">Next: '+Math.pow(2,mgl)+'x · Peak: '+Math.pow(2,maxMgl)+'x · Net: '+(s.netUnits>=0?'+':'')+s.netUnits.toFixed(1)+'u</div></div><div class="bet-dots">'+dots+'</div></div>'+
+    '<div class="bars">'+(bars||'<span style="font-size:10px;color:var(--mt);padding:0 4px">Waiting for draws…</span>')+'</div>'+
+    predH+'</div>';
+}
+
+function renderHistory(){
+  if(!sessions.length)return;
+  const g=document.getElementById('histGrid');
+  const sorted=[...sessions].sort((a,b)=>b.acc-a.acc);
+  g.innerHTML=sorted.map(s=>{
+    const dots=s.recentResults.slice(0,30).reverse().map(r=>'<div class="streak-dot '+(r.result==='WIN'?'w':'l')+'" title="'+String(r.period).slice(-5)+': '+r.result+' #'+r.actualNumber+'"></div>').join('');
+    const rows=s.recentResults.slice(0,12).map(r=>'<tr><td>'+String(r.period).slice(-6)+'</td><td>'+(r.actualNumber??'?')+'</td><td><span class="tag '+(r.actual==='BIG'?'big':'sml')+'">'+(r.actual||'?')+'</span></td><td><span class="tag '+(r.pred==='BIG'?'big':'sml')+'">'+(r.pred||'?')+'</span></td><td><span class="tag '+(r.result==='WIN'?'win':'loss')+'">'+r.result+'</span></td></tr>').join('');
+    return '<div class="hist-card"><div class="hist-head"><span class="hist-emo">'+s.emoji+'</span><span class="hist-name">'+s.name+'</span><span class="hist-acc '+accClass(s.acc)+'">'+s.acc+'% · '+s.wins+'W/'+s.losses+'L</span></div>'+
+      '<div class="hsr"><div class="hsr-cell"><div class="hsr-v acc-hi">+'+s.maxWinStreak+'</div><div class="hsr-l">Max Win</div></div><div class="hsr-cell"><div class="hsr-v" style="color:var(--red)">-'+s.maxLossStreak+'</div><div class="hsr-l">Max Loss</div></div><div class="hsr-cell"><div class="hsr-v" style="color:var(--ambt)">'+Math.pow(2,s.maxMartingaleLevel)+'x</div><div class="hsr-l">Peak Bet</div></div><div class="hsr-cell"><div class="hsr-v" style="color:'+(s.netUnits>=0?'var(--grn)':'var(--red)')+'">'+  (s.netUnits>=0?'+':'')+s.netUnits.toFixed(1)+'</div><div class="hsr-l">Net Units</div></div></div>'+
+      '<div class="streak-chart">'+(dots||'<span style="font-size:10px;color:var(--mt);padding:4px">Waiting…</span>')+'</div>'+
+      '<table class="res-tbl"><thead><tr><th>Period</th><th>#</th><th>Actual</th><th>Pred</th><th>Result</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" style="text-align:center;color:var(--mt);padding:10px">No results yet</td></tr>')+'</tbody></table></div>';
+  }).join('');
+}
+
+function renderAlltime(){
+  const entries=Object.values(alltimeData).filter(e=>e.formula==='regular');
+  if(!entries.length){document.getElementById('atLoading').style.display='';document.getElementById('atTable').style.display='none';return;}
+  entries.sort((a,b)=>{
+    const aa=(a.totalWins+a.totalLosses)>0?a.totalWins/(a.totalWins+a.totalLosses):0;
+    const ab=(b.totalWins+b.totalLosses)>0?b.totalWins/(b.totalWins+b.totalLosses):0;
+    return ab-aa||b.totalWins-a.totalWins;
+  });
+  document.getElementById('atLoading').style.display='none';
+  document.getElementById('atTable').style.display='';
+  document.getElementById('atBody').innerHTML=entries.map((e,i)=>{
+    const t=e.totalWins+e.totalLosses;const a=t>0?Math.round(e.totalWins/t*100):0;
+    const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1;
+    return '<tr class="'+(i===0?'crown':'')+'"><td style="color:var(--mt)">'+medal+'</td><td><span style="font-size:16px">'+e.emoji+'</span> <strong>'+e.name+'</strong></td><td style="color:var(--grn);font-weight:800">'+e.totalWins+'</td><td style="color:var(--red);font-weight:800">'+e.totalLosses+'</td><td class="'+accClass(a)+'" style="font-weight:800;font-size:14px">'+a+'%</td><td class="'+accClass(e.bestAcc)+'" style="font-weight:800">'+e.bestAcc+'%</td></tr>';
+  }).join('')||'<tr><td colspan="6" style="text-align:center;color:var(--mt);padding:20px">No data yet</td></tr>';
+}
+
+function loadCsvList(){
+  fetch('/api/monitor/csvlist').then(r=>r.json()).then(list=>{
+    const reg=list.filter(f=>f.formula==='regular');
+    document.getElementById('csvList').innerHTML=reg.length
+      ?reg.map(f=>'<div class="csv-item"><span class="csv-name">'+f.name+'</span><a href="'+f.path+'" download class="csv-btn">&#8595; Download</a></div>').join('')
+      :'<div style="color:var(--mt);padding:20px;text-align:center">No CSV files yet</div>';
+  }).catch(()=>{document.getElementById('csvList').innerHTML='<div style="color:var(--red);padding:20px">Error loading</div>';});
+}
+
+function showPage(name){
+  PAGES.forEach(p=>{
+    document.getElementById('page-'+p).style.display=p===name?'':'none';
+    document.getElementById('tab-'+p).classList.toggle('active',p===name);
+  });
+  if(name==='csv')loadCsvList();
+  if(name==='alltime')renderAlltime();
+  if(name==='history')renderHistory();
+}
+
+function resetSession(){
+  if(!confirm('Reset session stats for all Regular traders?'))return;
+  fetch('/api/monitor/reset/regular',{method:'POST'}).then(()=>showToast('✅ Session reset!')).catch(()=>showToast('❌ Failed'));
+}
+
+function showToast(msg){
+  const t=document.getElementById('toast');t.textContent=msg;
+  t.classList.add('show');clearTimeout(t._t);
+  t._t=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+function accClass(a){return a>=60?'acc-hi':a>=45?'acc-mid':'acc-lo';}
+function streakClass(s){return s>0?'streak-pos':s<0?'streak-neg':'streak-zero';}
+</script>
+</body>
+</html>

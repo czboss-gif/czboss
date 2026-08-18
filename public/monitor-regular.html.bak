@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Regular Traders Monitor</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+:root{
+  --bg:#09090f;--s1:#111118;--s2:#18181f;--bdr:#2a2a3a;
+  --fg:#f0f0f8;--mt:#6b7280;
+  --grn:#22c55e;--grna:rgba(34,197,94,.15);--grn2:rgba(34,197,94,.08);
+  --red:#ef4444;--reda:rgba(239,68,68,.15);
+  --amb:#f59e0b;--ambt:#fbbf24;--amba:rgba(245,158,11,.12);
+  --blu:#60a5fa;--blua:rgba(96,165,250,.12);
+  --pur:#a855f7;
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+.hdr{position:sticky;top:0;z-index:30;background:rgba(9,9,15,.92);backdrop-filter:blur(20px);border-bottom:1px solid var(--bdr);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.hdr-l{display:flex;align-items:center;gap:12px}
+.hdr-logo{width:44px;height:44px;border-radius:14px;background:var(--grna);border:1px solid rgba(34,197,94,.25);display:flex;align-items:center;justify-content:center;font-size:22px;position:relative}
+.hdr-logo::after{content:'';position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--grn);border:2px solid var(--bg);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}50%{box-shadow:0 0 0 4px rgba(34,197,94,0)}}
+.hdr-title{font-size:16px;font-weight:800;letter-spacing:-.02em}
+.hdr-sub{font-size:9px;color:var(--mt);font-family:monospace;margin-top:1px}
+.hdr-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;font-family:monospace}
+.badge.live{background:var(--grna);border:1px solid rgba(34,197,94,.2);color:var(--grn)}
+.badge.period{background:var(--s2);border:1px solid var(--bdr);color:var(--mt)}
+.badge.time{background:var(--s2);border:1px solid var(--bdr);color:var(--mt)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--grn);animation:blink 1.5s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.dot.red{background:var(--red)}
+.hdr-btn{padding:5px 12px;border-radius:8px;border:1px solid var(--bdr);background:var(--s2);color:var(--mt);font-size:10px;cursor:pointer;transition:all .2s}
+.hdr-btn:hover{border-color:var(--grn);color:var(--grn)}
+/* tabs */
+.tabs{display:flex;gap:8px;padding:14px 20px 0;border-bottom:1px solid var(--bdr);background:var(--s1)}
+.tab{padding:8px 16px;border-radius:10px 10px 0 0;font-size:11px;font-weight:700;cursor:pointer;border:1px solid transparent;border-bottom:none;color:var(--mt);transition:all .2s}
+.tab.active{background:var(--bg);border-color:var(--bdr);color:var(--fg)}
+/* summary bar */
+.sumbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;padding:14px 20px;background:var(--s1);border-bottom:1px solid var(--bdr)}
+.sum-item{background:var(--s2);border:1px solid var(--bdr);border-radius:10px;padding:10px 12px;text-align:center}
+.sum-v{font-size:20px;font-weight:900;line-height:1}
+.sum-l{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;color:var(--mt);margin-top:3px}
+/* main layout */
+.main{padding:14px 20px 60px;max-width:1600px;margin:0 auto}
+/* page: dashboard */
+#page-dashboard .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+/* trader card */
+.tcard{background:var(--s1);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;transition:border-color .2s}
+.tcard.win-glow{border-color:rgba(34,197,94,.4);box-shadow:0 0 12px rgba(34,197,94,.06)}
+.tcard.loss-glow{border-color:rgba(239,68,68,.35)}
+.tc-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--bdr)}
+.tc-emo{width:42px;height:42px;border-radius:11px;background:var(--grna);border:1px solid rgba(34,197,94,.2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.tc-emo.pro{background:var(--amba);border-color:rgba(245,158,11,.25)}
+.tc-info{flex:1;min-width:0}
+.tc-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tc-acc{font-size:18px;font-weight:900;line-height:1;margin-top:2px}
+.tc-wl{font-size:9px;color:var(--mt);margin-top:2px}
+.tc-badge{font-size:8px;font-weight:700;text-transform:uppercase;padding:2px 6px;border-radius:4px;letter-spacing:.1em}
+.tc-badge.win{background:var(--grna);color:var(--grn);border:1px solid rgba(34,197,94,.2)}
+.tc-badge.loss{background:var(--reda);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+.tc-badge.none{background:var(--s2);color:var(--mt);border:1px solid var(--bdr)}
+/* stats row */
+.tc-stats{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid var(--bdr)}
+.tc-stat{padding:8px;text-align:center;border-right:1px solid var(--bdr)}
+.tc-stat:last-child{border-right:none}
+.tc-sv{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+.tc-sl{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--mt);margin-top:2px}
+/* martingale */
+.mart{padding:10px 14px;border-bottom:1px solid var(--bdr)}
+.mart-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.mart-l{font-size:9px;color:var(--mt);font-weight:700;text-transform:uppercase;letter-spacing:.1em}
+.mart-v{font-size:11px;font-weight:800;color:var(--ambt)}
+.mart-dots{display:flex;gap:3px}
+.mart-dot{width:16px;height:16px;border-radius:4px;border:1px solid var(--bdr);background:var(--s2);font-size:7px;font-weight:700;display:flex;align-items:center;justify-content:center;color:var(--mt)}
+.mart-dot.active{background:rgba(245,158,11,.2);border-color:rgba(245,158,11,.4);color:var(--ambt)}
+.mart-dot.done{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.3);color:var(--red)}
+/* bars */
+.bars{display:flex;align-items:center;gap:2px;padding:10px 14px;height:30px}
+.bar{flex:1;border-radius:3px;transition:all .3s}
+.bar.w{background:rgba(34,197,94,.5);height:16px}
+.bar.l{background:rgba(239,68,68,.35);height:8px}
+/* next pred */
+.tc-next{display:flex;align-items:center;justify-content:space-between;padding:10px 14px}
+.np-l{font-size:9px;color:var(--mt);font-weight:700;text-transform:uppercase;letter-spacing:.1em}
+.np-v{font-size:13px;font-weight:900;padding:3px 10px;border-radius:6px}
+.np-v.big{background:var(--grna);color:var(--grn);border:1px solid rgba(34,197,94,.3)}
+.np-v.sml{background:var(--blua);color:var(--blu);border:1px solid rgba(96,165,250,.3)}
+.np-conf{font-size:10px;color:var(--mt)}
+/* page: results */
+#page-results{display:none}
+.res-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px}
+.res-card{background:var(--s1);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden}
+.res-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--bdr);background:var(--s2)}
+.res-emo{font-size:18px}
+.res-name{font-size:12px;font-weight:700;flex:1}
+.res-acc{font-size:12px;font-weight:800}
+.res-tbl{width:100%;border-collapse:collapse}
+.res-tbl th{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;color:var(--mt);padding:6px 10px;text-align:left;border-bottom:1px solid var(--bdr);background:var(--s2)}
+.res-tbl td{font-size:10px;padding:5px 10px;border-bottom:1px solid rgba(42,42,58,.3);font-family:monospace}
+.res-tbl tr:last-child td{border-bottom:none}
+.res-tbl tr:hover td{background:var(--s2)}
+.tag{display:inline-flex;align-items:center;justify-content:center;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:800;text-transform:uppercase}
+.tag.win{background:var(--grna);color:var(--grn);border:1px solid rgba(34,197,94,.2)}
+.tag.loss{background:var(--reda);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+.tag.big{background:var(--grna);color:var(--grn);border:1px solid rgba(34,197,94,.2)}
+.tag.sml{background:var(--blua);color:var(--blu);border:1px solid rgba(96,165,250,.2)}
+.tag.pend{background:var(--s2);color:var(--mt);border:1px solid var(--bdr)}
+/* page: alltime */
+#page-alltime{display:none}
+.at-table{width:100%;border-collapse:collapse;background:var(--s1);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden}
+.at-table th{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;color:var(--mt);padding:10px 14px;text-align:left;border-bottom:1px solid var(--bdr);background:var(--s2)}
+.at-table td{font-size:12px;padding:9px 14px;border-bottom:1px solid rgba(42,42,58,.3)}
+.at-table tr:last-child td{border-bottom:none}
+.at-table tr:hover td{background:var(--s2)}
+/* page: stats */
+#page-stats{display:none}
+.streak-chart{display:flex;gap:2px;flex-wrap:wrap}
+.streak-dot{width:10px;height:10px;border-radius:2px}
+.streak-dot.w{background:var(--grn)}
+.streak-dot.l{background:var(--red)}
+/* page: csv */
+#page-csv{display:none}
+.csv-list{display:flex;flex-direction:column;gap:8px}
+.csv-item{background:var(--s1);border:1px solid var(--bdr);border-radius:10px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.csv-name{font-size:12px;font-family:monospace;color:var(--fg)}
+.csv-btn{padding:5px 14px;border-radius:7px;background:var(--grna);border:1px solid rgba(34,197,94,.2);color:var(--grn);font-size:11px;font-weight:700;cursor:pointer;text-decoration:none}
+/* toast */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--s2);border:1px solid var(--bdr);border-radius:10px;padding:10px 16px;font-size:12px;z-index:99;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+/* loading */
+.loading{text-align:center;padding:80px;color:var(--mt)}
+.spinner{width:36px;height:36px;border:3px solid var(--bdr);border-top-color:var(--grn);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.acc-hi{color:var(--grn)}.acc-mid{color:var(--ambt)}.acc-lo{color:var(--red)}
+.streak-pos{color:var(--grn)}.streak-neg{color:var(--red)}.streak-zero{color:var(--mt)}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-l">
+    <div class="hdr-logo">🐯</div>
+    <div>
+      <div class="hdr-title">Regular Traders Monitor</div>
+      <div class="hdr-sub">djb2 hash · 20 traders · 30s</div>
+    </div>
+  </div>
+  <div class="hdr-r">
+    <span class="badge live"><span class="dot" id="connDot"></span><span id="connLabel">Connecting…</span></span>
+    <span class="badge period">Period: <span id="periodEl">—</span></span>
+    <span class="badge time">⏱ <span id="cdEl">—s</span></span>
+    <button class="hdr-btn" onclick="resetSession()">↺ Reset Session</button>
+    <button class="hdr-btn" onclick="showPage('csv')">📥 CSV</button>
+    <a href="/monitor-pro" class="hdr-btn" style="text-decoration:none">→ Pro Monitor</a>
+  </div>
+</header>
+
+<div class="sumbar" id="sumbar">
+  <div class="sum-item"><div class="sum-v acc-hi" id="s-acc">—%</div><div class="sum-l">Overall Acc</div></div>
+  <div class="sum-item"><div class="sum-v" style="color:var(--grn)" id="s-wins">—</div><div class="sum-l">Total Wins</div></div>
+  <div class="sum-item"><div class="sum-v" style="color:var(--red)" id="s-losses">—</div><div class="sum-l">Total Losses</div></div>
+  <div class="sum-item"><div class="sum-v" style="color:var(--ambt)" id="s-mgl">—x</div><div class="sum-l">Max Martingale</div></div>
+  <div class="sum-item"><div class="sum-v" style="color:var(--grn)" id="s-mws">—</div><div class="sum-l">Best Win Streak</div></div>
+  <div class="sum-item"><div class="sum-v" style="color:var(--red)" id="s-mls">—</div><div class="sum-l">Worst Loss Streak</div></div>
+  <div class="sum-item"><div class="sum-v" style="color:var(--pur)" id="s-units">—</div><div class="sum-l">Net Units</div></div>
+  <div class="sum-item"><div class="sum-v" style="color:var(--mt)" id="s-time">—</div><div class="sum-l">Session Time</div></div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showPage('dashboard')">📊 Dashboard</div>
+  <div class="tab" onclick="showPage('results')">📋 Results</div>
+  <div class="tab" onclick="showPage('stats')">📈 Streaks</div>
+  <div class="tab" onclick="showPage('alltime')">🏆 All-Time</div>
+  <div class="tab" onclick="showPage('csv')">📥 CSV Files</div>
+</div>
+
+<div class="main">
+  <div id="page-dashboard">
+    <div id="loadingEl" class="loading"><div class="spinner"></div><div>Connecting to monitor engine…</div></div>
+    <div class="grid" id="dashGrid" style="display:none"></div>
+  </div>
+
+  <div id="page-results">
+    <div class="res-grid" id="resGrid"></div>
+  </div>
+
+  <div id="page-stats">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px" id="statsGrid"></div>
+  </div>
+
+  <div id="page-alltime">
+    <table class="at-table" id="atTable">
+      <thead><tr>
+        <th>#</th><th>Trader</th><th>Total Wins</th><th>Total Losses</th>
+        <th>Acc %</th><th>Best Acc</th>
+      </tr></thead>
+      <tbody id="atBody"></tbody>
+    </table>
+  </div>
+
+  <div id="page-csv">
+    <div class="csv-list" id="csvList"><div class="loading" style="padding:40px"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const socket = io();
+let sessions = [];
+let nextPreds = [];
+let currentPeriod = '—';
+let lastNumber = null;
+let lastSize = null;
+
+// ── socket ──
+socket.on('connect', () => {
+  document.getElementById('connDot').classList.remove('red');
+  document.getElementById('connLabel').textContent = 'Live';
+  socket.emit('monitor:join', { formula: 'regular' });
+});
+socket.on('disconnect', () => {
+  document.getElementById('connDot').classList.add('red');
+  document.getElementById('connLabel').textContent = 'Disconnected';
+});
+socket.on('monitor:snapshot', data => processData(data));
+socket.on('monitor:update', data => { processData(data); showToast(`Draw settled: ${data.number} (${data.size})`); });
+socket.on('monitor:status', ({ running }) => {
+  document.getElementById('connLabel').textContent = running ? 'Live' : 'Stopped';
+  document.getElementById('connDot').style.background = running ? 'var(--grn)' : 'var(--red)';
+  if (!running) showToast('⏸ Monitor stopped');
+  else showToast('▶ Monitor running');
+});
+
+function processData(data) {
+  sessions = data.sessions || [];
+  nextPreds = data.nextPredictions || [];
+  currentPeriod = data.period || '—';
+  lastNumber = data.number ?? null;
+  lastSize = data.size ?? null;
+  document.getElementById('periodEl').textContent = String(currentPeriod).slice(-8);
+  renderSummary();
+  renderDashboard();
+  renderResults();
+  renderStats();
+  renderAlltime(data.alltimeBest);
+}
+
+// ── Countdown ──
+setInterval(() => {
+  const s = 30 - Math.floor(Date.now() / 1000) % 30;
+  document.getElementById('cdEl').textContent = s + 's';
+}, 500);
+
+// ── Summary bar ──
+function renderSummary() {
+  if (!sessions.length) return;
+  const tw = sessions.reduce((a, s) => a + s.wins, 0);
+  const tl = sessions.reduce((a, s) => a + s.losses, 0);
+  const tt = tw + tl;
+  const acc = tt > 0 ? Math.round(tw / tt * 100) : 0;
+  const maxMgl = Math.max(...sessions.map(s => s.maxMartingaleLevel));
+  const maxWs = Math.max(...sessions.map(s => s.maxWinStreak));
+  const maxLs = Math.max(...sessions.map(s => s.maxLossStreak));
+  const netUnits = sessions.reduce((a, s) => a + s.netUnits, 0);
+  const sessionTime = sessions[0]?.sessionTime || '—';
+  document.getElementById('s-acc').textContent = acc + '%';
+  document.getElementById('s-acc').className = 'sum-v ' + accClass(acc);
+  document.getElementById('s-wins').textContent = tw;
+  document.getElementById('s-losses').textContent = tl;
+  document.getElementById('s-mgl').textContent = Math.pow(2, maxMgl) + 'x';
+  document.getElementById('s-mws').textContent = maxWs;
+  document.getElementById('s-mls').textContent = maxLs;
+  document.getElementById('s-units').textContent = (netUnits >= 0 ? '+' : '') + netUnits.toFixed(1);
+  document.getElementById('s-time').textContent = sessionTime;
+}
+
+function accClass(a) { return a >= 60 ? 'acc-hi' : a >= 45 ? 'acc-mid' : 'acc-lo'; }
+function streakClass(s) { return s > 0 ? 'streak-pos' : s < 0 ? 'streak-neg' : 'streak-zero'; }
+
+// ── Dashboard ──
+function renderDashboard() {
+  if (!sessions.length) return;
+  document.getElementById('loadingEl').style.display = 'none';
+  const g = document.getElementById('dashGrid'); g.style.display = 'grid';
+  const sorted = [...sessions].sort((a, b) => b.acc - a.acc || b.wins - a.wins);
+  g.innerHTML = sorted.map((s, i) => buildCard(s, i, false)).join('');
+}
+
+function buildCard(s, rank, isPro) {
+  const ac = accClass(s.acc);
+  const streak = s.streak;
+  const streakDisplay = streak === 0 ? '—' : (streak > 0 ? `+${streak}🔥` : `${streak}❌`);
+  const glow = s.lastResult === 'WIN' ? 'win-glow' : s.lastResult === 'LOSS' ? 'loss-glow' : '';
+  const batchBadge = s.lastResult === 'WIN' ? 'win' : s.lastResult === 'LOSS' ? 'loss' : 'none';
+  const batchText = s.lastResult || '—';
+  const emoClass = isPro ? 'pro' : '';
+  const bars = s.recentResults.slice(0, 12).map(r =>
+    `<div class="bar ${r.result === 'WIN' ? 'w' : 'l'}"></div>`).join('');
+  // martingale dots (8 levels)
+  const mgl = s.martingaleLevel;
+  const maxMgl = s.maxMartingaleLevel;
+  const dots = [1,2,4,8,16,32,64,128].map((v, i) => {
+    const cls = i < mgl ? 'done' : i === mgl ? (mgl > 0 ? 'active' : '') : '';
+    return `<div class="mart-dot ${cls}" title="${v}x">${v}</div>`;
+  }).join('');
+  const pred = nextPreds.find(p => p.idx === s.idx);
+  const predHtml = pred
+    ? `<div class="tc-next"><span class="np-l">Next Pred</span><div style="display:flex;align-items:center;gap:6px"><span class="np-v ${pred.pred === 'BIG' ? 'big' : 'sml'}">${pred.pred}</span><span class="np-conf">${pred.confidence}%</span></div></div>`
+    : '';
+  return `<div class="tcard ${glow}">
+    <div class="tc-head">
+      <div class="tc-emo ${emoClass}">${s.emoji}</div>
+      <div class="tc-info">
+        <div class="tc-name">${rank < 3 ? ['🥇','🥈','🥉'][rank] + ' ' : ''}${s.name}</div>
+        <div class="tc-acc ${ac}">${s.acc}%</div>
+        <div class="tc-wl">${s.wins}W · ${s.losses}L · ${s.total} total</div>
+      </div>
+      <span class="tc-badge ${batchBadge}">${batchText}</span>
+    </div>
+    <div class="tc-stats">
+      <div class="tc-stat"><div class="tc-sv ${streakClass(streak)}">${streakDisplay}</div><div class="tc-sl">Streak</div></div>
+      <div class="tc-stat"><div class="tc-sv" style="color:var(--grn)">+${s.maxWinStreak}</div><div class="tc-sl">Best W</div></div>
+      <div class="tc-stat"><div class="tc-sv" style="color:var(--red)">-${s.maxLossStreak}</div><div class="tc-sl">Worst L</div></div>
+    </div>
+    <div class="mart">
+      <div class="mart-row">
+        <span class="mart-l">Martingale</span>
+        <span class="mart-v">Next: ${Math.pow(2, mgl)}x · Max: ${Math.pow(2, maxMgl)}x · Net: ${s.netUnits >= 0 ? '+' : ''}${s.netUnits.toFixed(1)}u</span>
+      </div>
+      <div class="mart-dots">${dots}</div>
+    </div>
+    <div class="bars">${bars || '<span style="font-size:10px;color:var(--mt);padding:0 4px">No data yet…</span>'}</div>
+    ${predHtml}
+  </div>`;
+}
+
+// ── Results ──
+function renderResults() {
+  if (!sessions.length) return;
+  const g = document.getElementById('resGrid');
+  const sorted = [...sessions].sort((a, b) => b.acc - a.acc);
+  g.innerHTML = sorted.map(s => {
+    const rows = s.recentResults.slice(0, 15).map((r, i) => `
+      <tr>
+        <td>${String(r.period).slice(-8)}</td>
+        <td>${r.actualNumber ?? '?'}</td>
+        <td><span class="tag ${r.actual === 'BIG' ? 'big' : 'sml'}">${r.actual || '?'}</span></td>
+        <td><span class="tag ${r.result === 'WIN' ? 'win' : 'loss'}">${r.result}</span></td>
+        <td style="color:var(--mt)">${r.confidence || '?'}%</td>
+      </tr>`).join('');
+    return `<div class="res-card">
+      <div class="res-head">
+        <span class="res-emo">${s.emoji}</span>
+        <span class="res-name">${s.name}</span>
+        <span class="res-acc ${accClass(s.acc)}">${s.acc}% (${s.wins}W/${s.losses}L)</span>
+      </div>
+      <table class="res-tbl">
+        <thead><tr><th>Period</th><th>#</th><th>Size</th><th>Result</th><th>Conf</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:var(--mt);padding:12px">No results yet</td></tr>'}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+
+// ── Streak chart ──
+function renderStats() {
+  if (!sessions.length) return;
+  const g = document.getElementById('statsGrid');
+  const sorted = [...sessions].sort((a, b) => b.acc - a.acc);
+  g.innerHTML = sorted.map(s => {
+    const dots = s.recentResults.slice(0, 30).reverse().map(r =>
+      `<div class="streak-dot ${r.result === 'WIN' ? 'w' : 'l'}" title="${r.period}: ${r.result}"></div>`).join('');
+    return `<div style="background:var(--s1);border:1px solid var(--bdr);border-radius:var(--r);padding:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:18px">${s.emoji}</span>
+        <span style="font-weight:700;font-size:13px">${s.name}</span>
+        <span class="tc-acc ${accClass(s.acc)}" style="font-size:12px;font-weight:800">${s.acc}%</span>
+        <span style="margin-left:auto;font-size:10px;color:var(--mt)">${s.sessionTime}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:10px">
+        <div style="text-align:center"><div style="font-size:14px;font-weight:800;color:var(--grn)">${s.maxWinStreak}</div><div style="font-size:8px;color:var(--mt);text-transform:uppercase">Best W Streak</div></div>
+        <div style="text-align:center"><div style="font-size:14px;font-weight:800;color:var(--red)">${s.maxLossStreak}</div><div style="font-size:8px;color:var(--mt);text-transform:uppercase">Worst L Streak</div></div>
+        <div style="text-align:center"><div style="font-size:14px;font-weight:800;color:var(--ambt)">${Math.pow(2, s.maxMartingaleLevel)}x</div><div style="font-size:8px;color:var(--mt);text-transform:uppercase">Peak Martingale</div></div>
+        <div style="text-align:center"><div style="font-size:14px;font-weight:800;color:${s.netUnits >= 0 ? 'var(--grn)' : 'var(--red)'}">${s.netUnits >= 0 ? '+' : ''}${s.netUnits.toFixed(1)}</div><div style="font-size:8px;color:var(--mt);text-transform:uppercase">Net Units</div></div>
+      </div>
+      <div class="streak-chart">${dots || '<span style="font-size:10px;color:var(--mt)">No results yet</span>'}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── All-time ──
+function renderAlltime(best) {
+  // Fetch full alltime from API
+  fetch('/api/monitor/alltime')
+    .then(r => r.json())
+    .then(data => {
+      const entries = Object.values(data).filter(e => e.formula === 'regular');
+      entries.sort((a, b) => b.bestAcc - a.bestAcc || b.totalWins - a.totalWins);
+      const body = document.getElementById('atBody');
+      body.innerHTML = entries.map((e, i) => {
+        const total = e.totalWins + e.totalLosses;
+        const acc = total > 0 ? Math.round(e.totalWins / total * 100) : 0;
+        return `<tr>
+          <td style="color:var(--mt)">${i + 1}</td>
+          <td><span style="font-size:16px">${e.emoji}</span> <strong>${e.name}</strong></td>
+          <td style="color:var(--grn);font-weight:800">${e.totalWins}</td>
+          <td style="color:var(--red);font-weight:800">${e.totalLosses}</td>
+          <td class="${accClass(acc)}" style="font-weight:800">${acc}%</td>
+          <td class="${accClass(e.bestAcc)}" style="font-weight:800">${e.bestAcc}%</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mt);padding:20px">No data yet</td></tr>';
+    }).catch(() => {});
+}
+
+// ── CSV ──
+function loadCsvList() {
+  fetch('/api/monitor/csvlist')
+    .then(r => r.json())
+    .then(list => {
+      const regular = list.filter(f => f.formula === 'regular');
+      document.getElementById('csvList').innerHTML = regular.length
+        ? regular.map(f => `<div class="csv-item"><span class="csv-name">${f.name}</span><a href="${f.path}" download class="csv-btn">⬇ Download</a></div>`).join('')
+        : '<div style="color:var(--mt);padding:20px;text-align:center">No CSV files yet</div>';
+    }).catch(() => {});
+}
+
+// ── Pages ──
+function showPage(name) {
+  ['dashboard','results','stats','alltime','csv'].forEach(p => {
+    document.getElementById('page-' + p).style.display = p === name ? '' : 'none';
+    document.querySelectorAll('.tab')[['dashboard','results','stats','alltime','csv'].indexOf(p)].classList.toggle('active', p === name);
+  });
+  if (name === 'csv') loadCsvList();
+  if (name === 'alltime') renderAlltime();
+}
+
+function resetSession() {
+  if (!confirm('Reset session stats?')) return;
+  fetch('/api/monitor/reset/regular', { method: 'POST' })
+    .then(() => showToast('Session reset!'))
+    .catch(() => {});
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+</script>
+</body>
+</html>

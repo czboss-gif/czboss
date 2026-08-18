@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Live Predictor Accuracy Tester — WinGo 30s</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
+<style>
+:root{
+  --bg:#0a0e14; --panel:#111722; --panel2:#161d2b; --border:#1f2937;
+  --text:#e5e7eb; --muted:#6b7280; --dim:#374151;
+  --big:#22c55e; --small:#60a5fa; --loss:#ef4444; --wait:#fbbf24; --accent:#a78bfa;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',ui-monospace,monospace;padding-bottom:40px}
+.wrap{max-width:720px;margin:0 auto;padding:14px}
+.hdr{text-align:center;padding:18px 0 6px}
+.hdr h1{font-size:18px;letter-spacing:1px;color:var(--accent)}
+.hdr .sub{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6}
+.hdr .sub b{color:var(--text)}
+
+.notice{background:#2a1010;border:1px solid var(--loss);border-radius:10px;padding:12px 14px;margin:14px 0;font-size:11px;line-height:1.6;color:#fca5a5}
+.notice b{color:#fff}
+
+.status{display:flex;justify-content:space-between;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin:14px 0}
+.status .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.dot.live{background:var(--big);box-shadow:0 0 8px var(--big)}
+.dot.off{background:var(--loss)}
+#apiState{font-size:12px;color:var(--muted)}
+#sessTime{font-family:ui-monospace,monospace;font-size:14px;color:var(--accent);font-weight:700}
+
+.pred-box{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;text-align:center;margin:14px 0}
+.pred-lbl{font-size:11px;color:var(--muted);letter-spacing:1px;margin-bottom:6px}
+#periodDisp{font-size:11px;color:var(--dim);margin-bottom:6px}
+.call{font-family:ui-monospace,monospace;font-weight:900;font-size:38px;letter-spacing:2px}
+.call.big{color:var(--big)} .call.small{color:var(--small)} .call.wait{color:var(--muted)}
+#confDisp{font-size:12px;color:var(--wait);margin-top:6px}
+#factorsDisp{font-size:10px;color:var(--dim);margin-top:8px;line-height:1.6}
+#countdownDisp{font-family:ui-monospace,monospace;font-size:13px;color:var(--wait);font-weight:700;margin-top:2px}
+.cd-bar-wrap{height:5px;background:var(--panel2);border-radius:3px;overflow:hidden;margin:8px auto 0;max-width:220px}
+.cd-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--wait));width:100%;transition:width .2s linear}
+.cd-bar.hot{background:var(--loss)}
+
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.stat{flex:1 1 100px;min-width:90px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:11px 0;text-align:center}
+.stat-v{display:block;font-family:ui-monospace,monospace;font-weight:900;font-size:18px}
+.stat-l{display:block;font-size:9px;color:var(--muted);letter-spacing:.5px;margin-top:3px}
+.g{color:var(--big)} .r{color:var(--loss)} .o{color:var(--wait)} .p{color:var(--accent)} .b{color:var(--small)}
+
+.verdict{margin:14px 0;padding:12px 14px;border-radius:10px;font-size:12px;font-weight:600;line-height:1.6;border:1px solid var(--border);background:var(--panel2)}
+.verdict.wait{color:var(--wait)} .verdict.bad{border-color:var(--loss);color:#fca5a5}
+.verdict.good{border-color:var(--big);color:#86efac}
+
+.sec{font-size:11px;color:var(--muted);letter-spacing:1px;margin:20px 4px 8px;text-transform:uppercase}
+.tbox{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--panel2);color:var(--muted);padding:9px 6px;text-align:left;font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:9px}
+td{padding:8px 6px;border-top:1px solid var(--border)}
+.res-win{color:var(--big);font-weight:700} .res-loss{color:var(--loss);font-weight:700} .res-wait{color:var(--dim)}
+.pg{display:flex;justify-content:space-between;align-items:center;padding:10px 4px}
+.pg button{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer}
+.pg button:disabled{opacity:.4;cursor:not-allowed}
+.pg span{font-size:11px;color:var(--muted)}
+.resetBtn{width:100%;padding:12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-weight:700;font-size:12px;letter-spacing:1px;cursor:pointer;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <h1>🧪 LIVE PREDICTOR ACCURACY TESTER</h1>
+    <div class="sub">
+      Testing the exact "Advanced Big/Small Analyzer" logic (sourced from a v0.app-generated tool) —
+      predicting <b>BIG/SMALL from the last 3 digits of the upcoming period number</b>, live against
+      real WinGo 30s draws. No changes to its math — this is the honest, unmodified scoring function.
+      <br><b style="color:var(--big)">⚡ Runs server-side, always-on</b> — this page is just a live
+      display; the engine keeps polling and scoring every round on the server whether or not this
+      tab is open, backgrounded, or closed (same architecture as the autobet engine).
+    </div>
+  </div>
+
+  <div class="notice">
+    ⚠️ <b>Known problem with this logic before a single round runs:</b> the source prompt asked for
+    "accuracy around 85 to 95%", and the code delivers that by <b>construction</b>, not measurement —
+    its confidence is <code>Math.min(95, Math.max(60, |score| + 60))</code>, clamped to 60–95% no matter
+    what, plus a literal <code>Math.random()</code> term mixed into the score. It scores the <b>period
+    number</b> (a sequential counter), which has no causal link to the RNG-drawn number. This tester
+    exists to prove — with real draws — what its actual hit rate is.
+  </div>
+
+  <div class="status">
+    <div><span class="dot off" id="apiDot"></span><span id="apiState">Connecting...</span></div>
+    <div>Session: <span id="sessTime">00:00:00</span></div>
+  </div>
+
+  <div class="pred-box" id="predBox">
+    <div class="pred-lbl">PREDICTION FOR UPCOMING PERIOD</div>
+    <div id="periodDisp">Period: —</div>
+    <div id="countdownDisp">Next draw in: —</div>
+    <div class="cd-bar-wrap"><div class="cd-bar" id="cdBar"></div></div>
+    <div class="call wait" id="callDisp">WAIT</div>
+    <div id="confDisp">confidence —</div>
+    <div id="factorsDisp"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><span class="stat-v p" id="sRounds">0</span><span class="stat-l">ROUNDS</span></div>
+    <div class="stat"><span class="stat-v g" id="sWins">0</span><span class="stat-l">WINS</span></div>
+    <div class="stat"><span class="stat-v r" id="sLosses">0</span><span class="stat-l">LOSSES</span></div>
+    <div class="stat"><span class="stat-v o" id="sAcc">0%</span><span class="stat-l">ACCURACY</span></div>
+    <div class="stat"><span class="stat-v g" id="sMaxWin">0</span><span class="stat-l">MAX WIN STREAK</span></div>
+    <div class="stat"><span class="stat-v r" id="sMaxLoss">0</span><span class="stat-l">MAX LOSS STREAK</span></div>
+  </div>
+
+  <div class="verdict wait" id="verdict">Collecting data — need at least 30 resolved rounds for a meaningful read. A fair coin averages ~50%; this tool claims 85–95%.</div>
+
+  <div class="sec">Round-by-round results</div>
+  <div class="tbox">
+    <table>
+      <thead><tr><th>Period</th><th>Digits</th><th>Actual</th><th>Predicted</th><th>Conf</th><th>Result</th></tr></thead>
+      <tbody id="tblBody"><tr><td colspan="6" style="text-align:center;color:var(--dim);padding:24px">Waiting for first round to resolve…</td></tr></tbody>
+    </table>
+    <div class="pg">
+      <button id="prevBtn">◄ PREV</button>
+      <span id="pageInd">PAGE 1 / 1</span>
+      <button id="nextBtn">NEXT ►</button>
+    </div>
+  </div>
+
+  <button class="resetBtn" id="resetBtn">RESET SESSION</button>
+</div>
+
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+/* ══════════════════════════════════════════════════════════════════
+   LIVE DISPLAY — this page does NOT poll or predict anything itself.
+   All prediction/scoring/polling now runs server-side in
+   server/predictorEngine.js (same architecture as the autobet engine
+   and monitor.js): it keeps working whether or not this tab is open,
+   backgrounded, or closed. This page just connects over Socket.IO and
+   renders whatever state the server pushes.
+   ══════════════════════════════════════════════════════════════════ */
+const socket = io();
+
+let historyRows = [];
+let sessionStart = Date.now();
+let currentPage = 1;
+const ROWS_PER_PAGE = 10;
+
+function setApiState(ok){
+  document.getElementById("apiDot").className = "dot " + (ok ? "live" : "off");
+  document.getElementById("apiState").textContent = ok ? "Connected (live server engine)" : "Reconnecting...";
+}
+
+function renderPrediction(pred){
+  const periodEl = document.getElementById("periodDisp");
+  const callEl = document.getElementById("callDisp");
+  const confEl = document.getElementById("confDisp");
+  const factEl = document.getElementById("factorsDisp");
+  if(!pred){ callEl.textContent="WAIT"; callEl.className="call wait"; return; }
+  periodEl.textContent = "Period: …" + pred.period.slice(-6) + "  (digits used: " + pred.digits + ")";
+  callEl.textContent = pred.pred;
+  callEl.className = "call " + (pred.pred==="BIG" ? "big":"small");
+  confEl.textContent = "confidence " + pred.conf + "% (source's own claimed score)";
+  factEl.textContent = (pred.factors||[]).join(" · ");
+}
+
+function renderStats(data){
+  document.getElementById("sRounds").textContent = data.total;
+  document.getElementById("sWins").textContent = data.wins;
+  document.getElementById("sLosses").textContent = data.losses;
+  document.getElementById("sAcc").textContent = data.accuracy + "%";
+  document.getElementById("sMaxWin").textContent = data.maxWinStreak;
+  document.getElementById("sMaxLoss").textContent = data.maxLossStreak;
+
+  const v = document.getElementById("verdict");
+  const t = data.total;
+  if(t < 30){
+    v.className="verdict wait";
+    v.textContent = "Collecting data (" + t + "/30 rounds) — need at least 30 resolved rounds for a meaningful read. A fair coin averages ~50%; this tool claims 85–95%.";
+  } else {
+    const acc = data.accuracy;
+    if(acc >= 70){
+      v.className="verdict good";
+      v.textContent = "🟢 " + acc.toFixed(1) + "% over " + t + " rounds — surprisingly high. Keep running; a short hot streak can look like this before reverting.";
+    } else if(acc >= 53){
+      v.className="verdict wait";
+      v.textContent = "🟡 " + acc.toFixed(1) + "% over " + t + " rounds — mildly above a coin flip. Still far below the claimed 85–95%; keep watching for reversion to ~50%.";
+    } else {
+      v.className="verdict bad";
+      v.textContent = "🔴 " + acc.toFixed(1) + "% over " + t + " rounds — consistent with a coin flip (~50%), NOT the claimed 85–95%. This confirms the confidence score is fabricated, not measured.";
+    }
+  }
+}
+
+function renderTable(){
+  const tb = document.getElementById("tblBody");
+  const totalPages = Math.max(1, Math.ceil(historyRows.length/ROWS_PER_PAGE));
+  if(currentPage>totalPages) currentPage=totalPages;
+  document.getElementById("pageInd").textContent = "PAGE " + currentPage + " / " + totalPages;
+  document.getElementById("prevBtn").disabled = currentPage<=1;
+  document.getElementById("nextBtn").disabled = currentPage>=totalPages;
+
+  if(!historyRows.length){
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:24px">Waiting for first round to resolve…</td></tr>';
+    return;
+  }
+  const start=(currentPage-1)*ROWS_PER_PAGE;
+  const rows=historyRows.slice(start,start+ROWS_PER_PAGE);
+  tb.innerHTML = rows.map(r=>{
+    const resHtml = r.result==="WIN" ? '<span class="res-win">WIN</span>' : '<span class="res-loss">LOSS</span>';
+    const predColor = r.pred==="BIG" ? "var(--big)" : "var(--small)";
+    const actColor = r.actual==="BIG" ? "var(--big)" : "var(--small)";
+    return `<tr>
+      <td>…${r.period.slice(-6)}</td>
+      <td>${r.digits}</td>
+      <td style="color:${actColor}">${r.actual}</td>
+      <td style="color:${predColor}">${r.pred}</td>
+      <td>${r.conf}%</td>
+      <td>${resHtml}</td>
+    </tr>`;
+  }).join("");
+}
+
+function applySnapshot(data){
+  historyRows = data.history || [];
+  sessionStart = data.sessionStart || Date.now();
+  renderPrediction(data.currentPrediction);
+  renderStats(data);
+  renderTable();
+}
+
+socket.on("connect", () => setApiState(true));
+socket.on("disconnect", () => setApiState(false));
+socket.on("predictor:snapshot", applySnapshot);
+socket.on("predictor:update", applySnapshot);
+
+document.getElementById("prevBtn").addEventListener("click",()=>{ if(currentPage>1){ currentPage--; renderTable(); } });
+document.getElementById("nextBtn").addEventListener("click",()=>{
+  const tp=Math.ceil(historyRows.length/ROWS_PER_PAGE);
+  if(currentPage<tp){ currentPage++; renderTable(); }
+});
+document.getElementById("resetBtn").addEventListener("click", async ()=>{
+  await fetch("/api/predictor/reset", { method:"POST" });
+});
+
+// Session clock — purely visual, ticks locally but always derives from the
+// server's authoritative sessionStart, so it self-corrects after any pause
+// (backgrounded tab, sleep, etc.) instead of drifting.
+setInterval(()=>{
+  const sec = Math.floor((Date.now()-sessionStart)/1000);
+  const hh = String(Math.floor(sec/3600)).padStart(2,"0");
+  const mm = String(Math.floor((sec%3600)/60)).padStart(2,"0");
+  const ss = String(sec%60).padStart(2,"0");
+  document.getElementById("sessTime").textContent = `${hh}:${mm}:${ss}`;
+}, 1000);
+
+// Next-draw countdown — pure wall-clock math against the known 30s WinGo
+// cycle boundary (Date.now() % 30000). No server round-trip needed; this
+// is identical to how every other live engine page in this project shows
+// its countdown/progress bar.
+const CYCLE_MS = 30000;
+setInterval(()=>{
+  const remainMs = CYCLE_MS - (Date.now() % CYCLE_MS);
+  const secs = Math.ceil(remainMs / 1000);
+  document.getElementById("countdownDisp").textContent = "Next draw in: " + secs + "s";
+  const bar = document.getElementById("cdBar");
+  bar.style.width = (remainMs / CYCLE_MS * 100) + "%";
+  bar.className = "cd-bar" + (secs <= 5 ? " hot" : "");
+}, 200);
+</script>
+</body>
+</html>

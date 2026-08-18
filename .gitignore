@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Editor
+.vscode/
+.idea/
+
+# Runtime data
+data/*.json
+
+# Backup (reference only)
+backup/
+data/keys.csv
+
+# Lock file (optional — remove this line if you want to commit it)
+# package-lock.json
+data/history/

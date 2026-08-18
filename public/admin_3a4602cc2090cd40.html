@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>KINGPIN 4.0 — Admin</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f81f7'/%3E%3Ctext x='16' y='23' font-size='19' font-family='Arial,sans-serif' font-weight='bold' fill='white' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap');
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --bg:#0a0a0f;--surface:#12121a;--surface2:#1a1a26;--border:#252536;
+      --gold:#d4a843;--gold2:#f0c760;--accent:#8b5cf6;--green:#22c55e;--red:#ef4444;
+      --blue:#3b82f6;--orange:#f97316;
+      --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
+      --mono:'JetBrains Mono',Consolas,monospace;
+    }
+    body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+    .kp-logo{flex-shrink:0;vertical-align:middle;filter:drop-shadow(0 0 6px rgba(47,129,247,.45));animation:kpSpin 22s linear infinite}
+    .kp-logo-lg{display:block;margin:0 auto 12px;animation-duration:36s;filter:drop-shadow(0 0 16px rgba(47,129,247,.45))}
+    @keyframes kpSpin{to{transform:rotate(360deg)}}
+    @media (prefers-reduced-motion:reduce){.kp-logo{animation:none}}
+    ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+
+    /* ─── Login ─── */
+    .login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;background:radial-gradient(ellipse at 50% 0%,#1a1528 0%,var(--bg) 70%)}
+    .login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:48px 36px;max-width:400px;width:100%;text-align:center}
+    .login-card h1{font-size:14px;font-weight:700;color:var(--gold);letter-spacing:4px;text-transform:uppercase;margin-bottom:4px}
+    .login-card p{color:var(--text3);font-size:13px;margin-bottom:28px}
+    .login-card input{width:100%;padding:14px 16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;margin-bottom:16px;transition:border .2s}
+    .login-card input:focus{outline:none;border-color:var(--gold)}
+    .login-card .err{color:var(--red);font-size:12px;margin-bottom:12px;min-height:16px}
+    .btn-gold{width:100%;padding:14px;background:linear-gradient(135deg,var(--gold),#b8912e);border:none;border-radius:10px;color:#000;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:1px;transition:all .2s}
+    .btn-gold:hover{filter:brightness(1.15);transform:translateY(-1px)}
+    .btn-gold:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+    /* ─── Layout ─── */
+    .admin{display:none;max-width:1100px;margin:0 auto;padding:20px}
+    .topbar{display:flex;justify-content:space-between;align-items:center;padding:16px 0;margin-bottom:20px;border-bottom:1px solid var(--border)}
+    .topbar h1{font-size:13px;font-weight:700;color:var(--gold);letter-spacing:3px;text-transform:uppercase}
+    .topbar-right{display:flex;gap:8px;align-items:center}
+    .btn{padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;transition:all .2s;letter-spacing:.3px}
+    .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text2)}
+    .btn-ghost:hover{border-color:var(--gold);color:var(--gold)}
+    .btn-red{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+    .btn-red:hover{background:rgba(239,68,68,.25)}
+    .btn-green{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.2)}
+    .btn-green:hover{background:rgba(34,197,94,.25)}
+    .btn-blue{background:rgba(59,130,246,.15);color:var(--blue);border:1px solid rgba(59,130,246,.2)}
+    .btn-blue:hover{background:rgba(59,130,246,.25)}
+    .btn-gold-sm{background:linear-gradient(135deg,var(--gold),#b8912e);color:#000;border:none}
+    .btn-gold-sm:hover{filter:brightness(1.15)}
+    .btn-sm{padding:5px 10px;font-size:11px}
+    .btn-xs{padding:4px 8px;font-size:10px}
+    .btn:disabled{opacity:.4;cursor:not-allowed}
+
+    /* ─── Tabs ─── */
+    .tabs{display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface)}
+    .tab{flex:1;padding:12px 16px;background:transparent;border:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--text3);transition:all .2s;text-align:center;letter-spacing:.3px}
+    .tab.active{background:var(--surface2);color:var(--gold);border-bottom:2px solid var(--gold)}
+    .tab:hover:not(.active){color:var(--text2)}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
+
+    /* ─── Card ─── */
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-bottom:20px;overflow:hidden}
+    .card-head{padding:14px 20px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    .card-title{font-size:14px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px}
+    .card-body{padding:20px}
+
+    /* ─── Stats Row ─── */
+    .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+    .stat-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center}
+    .stat-val{font-size:24px;font-weight:800;font-family:var(--mono);color:var(--gold)}
+    .stat-lbl{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+    @media(max-width:600px){.stats-row{grid-template-columns:repeat(2,1fr)}}
+
+    /* ─── Keys Table ─── */
+    .table-wrap{overflow-x:auto}
+    table.main-table{width:100%;border-collapse:collapse;font-size:13px}
+    table.main-table th{text-align:left;padding:10px 12px;font-size:11px;color:var(--text3);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px;font-weight:600;white-space:nowrap}
+    table.main-table td{padding:10px 12px;border-bottom:1px solid rgba(37,37,54,.5);vertical-align:middle}
+    table.main-table tr:last-child td{border-bottom:none}
+    table.main-table tr:hover td{background:rgba(212,168,67,.03)}
+    .key-code{font-family:var(--mono);background:var(--bg);padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;letter-spacing:2px;color:var(--gold2);cursor:pointer;display:inline-block}
+    .key-masked{letter-spacing:2px}
+    .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+    .badge-on{background:rgba(34,197,94,.12);color:var(--green)}
+    .badge-off{background:rgba(239,68,68,.12);color:var(--red)}
+    .badge-super{background:rgba(139,92,246,.12);color:var(--accent);font-size:10px}
+    .badge-bound{background:rgba(59,130,246,.12);color:var(--blue);font-size:11px}
+    .badge-free{background:rgba(100,116,139,.1);color:var(--text3);font-size:11px}
+    .actions-cell{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+    .profit-pos{color:var(--green);font-weight:700;font-family:var(--mono)}
+    .profit-neg{color:var(--red);font-weight:700;font-family:var(--mono)}
+    .profit-zero{color:var(--text3);font-family:var(--mono)}
+
+    /* ─── Generate Key Form ─── */
+    .gen-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 20px;border-top:1px solid var(--border);background:var(--surface2)}
+    .gen-row input{flex:1;min-width:160px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px}
+    .gen-row input:focus{outline:none;border-color:var(--gold)}
+    .gen-row span{font-size:12px;color:var(--text3)}
+
+    /* ─── Session drawer ─── */
+    .session-drawer{display:none;background:var(--surface2);border-top:1px solid var(--border);padding:0}
+    .session-drawer.open{display:block}
+    .drawer-head{padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}
+    .drawer-head span{font-size:12px;color:var(--text2);font-weight:600}
+
+    /* ─── Freq Map ─── */
+    .freq-table{width:100%;border-collapse:collapse}
+    .freq-table th{text-align:center;padding:10px 8px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);font-weight:600}
+    .freq-table td{text-align:center;padding:10px 8px;border-bottom:1px solid rgba(37,37,54,.5);font-size:14px}
+    .freq-table tr:hover td{background:rgba(212,168,67,.03)}
+    .freq-num{font-size:20px;font-weight:800;color:var(--gold)}
+    .freq-arrow{color:var(--text3);font-size:12px}
+    .freq-input{width:52px;text-align:center;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;font-weight:700;font-family:var(--mono)}
+    .freq-input:focus{outline:none;border-color:var(--gold)}
+    .tag-big{display:inline-block;padding:3px 12px;border-radius:6px;font-size:12px;font-weight:700;background:rgba(249,115,22,.12);color:#f97316}
+    .tag-small{display:inline-block;padding:3px 12px;border-radius:6px;font-size:12px;font-weight:700;background:rgba(59,130,246,.12);color:#3b82f6}
+
+    /* ─── Toast ─── */
+    .toast-box{position:fixed;top:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px}
+    .toast{padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transform:translateY(-10px);transition:all .3s;backdrop-filter:blur(10px)}
+    .toast.show{opacity:1;transform:translateY(0)}
+    .toast.ok{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+    .toast.err{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+
+    /* ─── Empty state ─── */
+    .empty{text-align:center;padding:40px 20px;color:var(--text3);font-size:13px}
+
+    /* ─── Filter bar ─── */
+    .filter-bar{padding:12px 20px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .filter-bar select,.filter-bar input{padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px}
+    .filter-bar select:focus,.filter-bar input:focus{outline:none;border-color:var(--gold)}
+
+    @media(max-width:640px){
+      .admin{padding:10px}
+      table.main-table th:nth-child(5),table.main-table td:nth-child(5){display:none}
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── REUSABLE LOGO (yin-yang + circuit ring) ─── -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="kpMark" viewBox="0 0 100 100">
+    <defs>
+      <linearGradient id="kpg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#58a6ff"/><stop offset="1" stop-color="#2f81f7"/>
+      </linearGradient>
+    </defs>
+    <circle cx="50" cy="50" r="47" fill="none" stroke="url(#kpg)" stroke-width="1.4" stroke-dasharray="3 5" opacity=".75"/>
+    <circle cx="50" cy="3" r="2.4" fill="#58a6ff"/><circle cx="97" cy="50" r="2.4" fill="#58a6ff"/>
+    <circle cx="50" cy="97" r="2.4" fill="#58a6ff"/><circle cx="3" cy="50" r="2.4" fill="#58a6ff"/>
+    <circle cx="50" cy="50" r="40" fill="url(#kpg)"/>
+    <path d="M50,10 a40,40 0 0,1 0,80 a20,20 0 0,1 0,-40 a20,20 0 0,0 0,-40z" fill="#0a0a0f"/>
+    <circle cx="50" cy="30" r="6" fill="#0a0a0f"/><circle cx="50" cy="70" r="6" fill="url(#kpg)"/>
+    <circle cx="50" cy="30" r="2" fill="#58a6ff"/><circle cx="50" cy="70" r="2" fill="#0a0a0f"/>
+  </symbol>
+</svg>
+
+<!-- ─── LOGIN ─── -->
+<div class="login-wrap" id="loginScreen">
+  <div class="login-card">
+    <svg class="kp-logo kp-logo-lg" width="56" height="56" aria-hidden="true"><use href="#kpMark"/></svg>
+    <h1>KINGPIN 4.0</h1>
+    <p>Admin Control Panel</p>
+    <div class="err" id="loginErr"></div>
+    <input type="password" id="loginPw" placeholder="Admin Password" autofocus>
+    <button class="btn-gold" id="loginBtn">UNLOCK</button>
+  </div>
+</div>
+
+<!-- ─── ADMIN PANEL ─── -->
+<div class="admin" id="admin">
+
+  <div class="topbar">
+    <div>
+      <h1><svg class="kp-logo" width="22" height="22" aria-hidden="true"><use href="#kpMark"/></svg> KINGPIN 4.0 ADMIN</h1>
+      <a href="/" style="color:var(--text3);text-decoration:none;font-size:12px;transition:color .2s" onmouseover="this.style.color='var(--gold)'" onmouseout="this.style.color='var(--text3)'">← Back to AutoBet</a>
+    </div>
+    <div class="topbar-right">
+      <span id="adminTime" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+      <button class="btn btn-ghost" id="btnRefresh">↻ Refresh</button>
+      <button class="btn btn-red" id="btnLogout">Logout</button>
+    </div>
+  </div>
+
+  <!-- ─── STATS ─── -->
+  <div class="stats-row">
+    <div class="stat-box"><div class="stat-val" id="statTotalKeys">—</div><div class="stat-lbl">Total Keys</div></div>
+    <div class="stat-box"><div class="stat-val" id="statActiveKeys">—</div><div class="stat-lbl">Active Keys</div></div>
+    <div class="stat-box"><div class="stat-val" id="statSessions">—</div><div class="stat-lbl">Sessions</div></div>
+    <div class="stat-box"><div class="stat-val" id="statProfit" style="color:var(--green)">—</div><div class="stat-lbl">Total Profit</div></div>
+  </div>
+
+  <!-- ─── TABS ─── -->
+  <div class="tabs">
+    <button class="tab active" data-tab="keys">🔑 Access Keys</button>
+    <button class="tab" data-tab="sessions">📊 Sessions</button>
+    <button class="tab" data-tab="freqmap">♠ Freq Map</button>
+  </div>
+
+  <!-- ════ KEYS TAB ════ -->
+  <div class="tab-panel active" id="tab-keys">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">🔑 License Keys</div>
+        <span style="font-size:12px;color:var(--text3)" id="keyCount">—</span>
+      </div>
+      <div class="table-wrap">
+        <table class="main-table">
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Label</th>
+              <th>Bound Phone</th>
+              <th>Status</th>
+              <th>Sessions</th>
+              <th>Total Profit</th>
+              <th>Last Seen</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="keysBody"></tbody>
+        </table>
+      </div>
+      <div class="gen-row">
+        <input type="text" id="newKeyLabel" placeholder="Label (e.g. Ravi, User 2)" maxlength="40">
+        <button class="btn btn-gold-sm" id="btnGenerateKey">⚡ Generate Key</button>
+        <span>Key is auto-generated in XXXXX-XXXXX-XXXXX-XXXXX-XXXXX format</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ SESSIONS TAB ════ -->
+  <div class="tab-panel" id="tab-sessions">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">📊 Betting Sessions</div>
+        <button class="btn btn-ghost btn-sm" id="btnRefreshSessions">↻</button>
+      </div>
+      <div class="filter-bar">
+        <select id="filterKey">
+          <option value="">All Keys</option>
+        </select>
+        <span style="font-size:12px;color:var(--text3)" id="sessionCount">—</span>
+      </div>
+      <div class="table-wrap">
+        <table class="main-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Key</th>
+              <th>Phone</th>
+              <th>Balance at Login</th>
+              <th>Bet Start</th>
+              <th>Bet Stop</th>
+              <th>Duration</th>
+              <th>Profit</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="sessionsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ FREQ MAP TAB ════ -->
+  <div class="tab-panel" id="tab-freqmap">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">♠ Frequent Number Map</div>
+        <button class="btn btn-green btn-sm" id="btnSaveFreq">💾 Save Changes</button>
+      </div>
+      <div style="padding:20px">
+        <p style="font-size:12px;color:var(--text3);margin-bottom:16px">Map each draw number (0–9) to the number most likely to follow it. Used by prediction formulas.</p>
+        <table class="freq-table">
+          <thead><tr><th>Number</th><th></th><th>Mapped To</th><th>Direct</th><th>Opposite</th></tr></thead>
+          <tbody id="freqBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /admin -->
+
+<div class="toast-box" id="toastBox"></div>
+
+<script>
+(function(){
+  'use strict';
+
+  var session = sessionStorage.getItem('kp_admin_session') || '';
+  var allKeys = [];
+  var allSessions = [];
+
+  function $(id){ return document.getElementById(id); }
+  function headers(){ return { 'Content-Type':'application/json', 'X-Admin-Session': session }; }
+
+  /* ─── Toast ─── */
+  function toast(msg, type){
+    var box = $('toastBox');
+    var el = document.createElement('div');
+    el.className = 'toast ' + (type||'ok');
+    el.textContent = msg;
+    box.appendChild(el);
+    requestAnimationFrame(function(){ el.classList.add('show'); });
+    setTimeout(function(){ el.classList.remove('show'); setTimeout(function(){ el.remove(); }, 300); }, 3000);
+  }
+
+  /* ─── Clock ─── */
+  function updateClock(){
+    $('adminTime').textContent = new Date().toLocaleTimeString();
+  }
+  updateClock(); setInterval(updateClock, 1000);
+
+  /* ─── Tabs ─── */
+  document.querySelectorAll('.tab').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('active'); });
+      document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
+      btn.classList.add('active');
+      $('tab-' + btn.dataset.tab).classList.add('active');
+      if(btn.dataset.tab === 'sessions') renderSessions(allSessions);
+    });
+  });
+
+  /* ─── Login ─── */
+  function doLogin(){
+    var pw = $('loginPw').value;
+    var btn = $('loginBtn');
+    btn.disabled = true; btn.textContent = 'Checking...';
+    fetch('/admin/login',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pw}) })
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+    .then(function(r){
+      if(r.ok && r.data.session){
+        session = r.data.session;
+        sessionStorage.setItem('kp_admin_session', session);
+        $('loginScreen').style.display = 'none';
+        $('admin').style.display = 'block';
+        refreshAll();
+      } else {
+        $('loginErr').textContent = 'Wrong password';
+        $('loginPw').value = '';
+      }
+    })
+    .catch(function(){ $('loginErr').textContent = 'Connection failed'; })
+    .finally(function(){ btn.disabled = false; btn.textContent = 'UNLOCK'; });
+  }
+
+  $('loginBtn').addEventListener('click', doLogin);
+  $('loginPw').addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
+
+  function doLogout(){
+    fetch('/admin/logout',{ method:'POST', headers:headers() });
+    sessionStorage.removeItem('kp_admin_session');
+    session = '';
+    location.reload();
+  }
+
+  function checkAuth(){
+    if(!session) return;
+    fetch('/admin/check',{ headers:headers() })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.authenticated){
+        $('loginScreen').style.display = 'none';
+        $('admin').style.display = 'block';
+        refreshAll();
+      }
+    })
+    .catch(function(){});
+  }
+
+  /* ─── Refresh All ─── */
+  function refreshAll(){ loadKeys(); loadAllSessions(); loadFreqMap(); }
+
+  /* ─── Helpers ─── */
+  function maskKey(key){
+    var parts = (key||'').split('-');
+    if(parts.length < 5) return key;
+    return parts[0] + '-XXXXX-XXXXX-XXXXX-' + parts[4];
+  }
+
+  function fmtProfit(v){
+    var n = parseFloat(v) || 0;
+    if(n > 0) return '<span class="profit-pos">+₹' + n.toFixed(2) + '</span>';
+    if(n < 0) return '<span class="profit-neg">₹' + n.toFixed(2) + '</span>';
+    return '<span class="profit-zero">₹0.00</span>';
+  }
+
+  function fmtDate(d){
+    if(!d) return '<span style="color:var(--text3)">—</span>';
+    var dt = new Date(d);
+    return '<span style="font-size:11px;color:var(--text3)">' + dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString() + '</span>';
+  }
+
+  function fmtDuration(start, stop){
+    if(!start || !stop) return '<span style="color:var(--text3)">—</span>';
+    var ms = new Date(stop) - new Date(start);
+    if(ms < 0) return '<span style="color:var(--text3)">—</span>';
+    var s = Math.floor(ms/1000);
+    var h = Math.floor(s/3600); s %= 3600;
+    var m = Math.floor(s/60); s %= 60;
+    return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  }
+
+  /* ─────────────────────────────────────────────
+     KEYS
+  ───────────────────────────────────────────── */
+  function loadKeys(){
+    fetch('/admin/keys',{ headers:headers() })
+    .then(function(r){ return r.json(); })
+    .then(function(list){
+      if(!Array.isArray(list)) return;
+      allKeys = list;
+      renderKeys(list);
+      updateStats(list);
+      populateKeyFilter(list);
+    })
+    .catch(function(){});
+  }
+
+  function updateStats(keys){
+    var active = keys.filter(function(k){ return k.enabled; }).length;
+    var sessions = keys.reduce(function(a,k){ return a + (k.sessions||0); }, 0);
+    var profit = keys.reduce(function(a,k){ return a + (k.totalProfit||0); }, 0);
+    $('statTotalKeys').textContent = keys.length;
+    $('statActiveKeys').textContent = active;
+    $('statSessions').textContent = sessions;
+    $('statProfit').textContent = (profit >= 0 ? '+' : '') + '₹' + profit.toFixed(2);
+    $('statProfit').style.color = profit >= 0 ? 'var(--green)' : 'var(--red)';
+    $('keyCount').textContent = active + ' active / ' + keys.length + ' total';
+  }
+
+  function fallbackCopy(text, btn, onCopied){
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try {
+      document.execCommand('copy');
+      onCopied();
+    } catch(e) {
+      toast('Copy failed — select manually: ' + text, 'err');
+    }
+    document.body.removeChild(ta);
+  }
+
+  function renderKeys(list){
+    var tbody = $('keysBody');
+    if(!list.length){ tbody.innerHTML = '<tr><td colspan="8" class="empty">No keys yet — generate one below</td></tr>'; return; }
+
+    tbody.innerHTML = '';
+    list.forEach(function(k){
+      var tr = document.createElement('tr');
+
+      /* Key cell with reveal toggle */
+      var keyCell = '<span style="display:inline-flex;align-items:center;gap:6px">'
+        + '<span class="key-code key-masked" data-key="' + k.key + '" title="Click to reveal">' + maskKey(k.key) + '</span>'
+        + '<button class="btn btn-xs btn-ghost" data-copy="' + k.key + '" title="Copy key">⎘</button>'
+        + '</span>';
+
+      /* Bound phone */
+      var phoneCell = k.isDefault
+        ? '<span class="badge badge-super">Super User</span>'
+        : (k.boundPhone
+            ? '<span class="badge badge-bound">' + k.boundPhone + '</span>'
+            : '<span class="badge badge-free">Unbound</span>');
+
+      /* Status */
+      var statusCell = k.isDefault
+        ? '<span class="badge badge-on">Active</span> <span class="badge badge-super">Default</span>'
+        : '<span class="badge ' + (k.enabled ? 'badge-on' : 'badge-off') + '">' + (k.enabled ? 'Active' : 'Disabled') + '</span>';
+
+      /* Actions */
+      var actions = '';
+      if(!k.isDefault){
+        actions += '<button class="btn btn-sm ' + (k.enabled ? 'btn-red' : 'btn-green') + '" data-toggle="' + k._id + '">'
+          + (k.enabled ? 'Disable' : 'Enable') + '</button>';
+        actions += ' <button class="btn btn-sm btn-ghost" data-sessions="' + k._id + '" title="View Sessions">📋 Logs</button>';
+        if(k.pwd){
+          actions += ' <button class="btn btn-sm btn-ghost" data-copypwd="' + encodeURIComponent(k.pwd) + '" title="Copy Password">🔑</button>';
+        }
+        actions += ' <button class="btn btn-sm btn-red" data-delete="' + k._id + '" title="Delete Key">🗑</button>';
+      } else {
+        actions = '<span style="font-size:11px;color:var(--text3)">Protected</span>';
+      }
+
+      var profit = parseFloat(k.totalProfit) || 0;
+      var lastSeen = k.lastSeen ? new Date(k.lastSeen).toLocaleDateString() : '—';
+
+      tr.innerHTML = '<td>' + keyCell + '</td>'
+        + '<td style="font-weight:600">' + (k.label || '—') + '</td>'
+        + '<td>' + phoneCell + '</td>'
+        + '<td>' + statusCell + '</td>'
+        + '<td style="font-family:var(--mono);color:var(--text2)">' + (k.sessions || 0) + '</td>'
+        + '<td>' + fmtProfit(profit) + '</td>'
+        + '<td style="font-size:11px;color:var(--text3)">' + lastSeen + '</td>'
+        + '<td><div class="actions-cell">' + actions + '</div></td>';
+
+      tbody.appendChild(tr);
+
+      /* Session drawer row (hidden by default) */
+      var drawerRow = document.createElement('tr');
+      drawerRow.id = 'drawer-' + k._id;
+      drawerRow.innerHTML = '<td colspan="8" style="padding:0"><div class="session-drawer" id="drawer-inner-' + k._id + '"><div class="empty" style="padding:20px">Loading…</div></div></td>';
+      tbody.appendChild(drawerRow);
+    });
+
+    /* Bind events */
+    tbody.querySelectorAll('.key-code[data-key]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var full = el.getAttribute('data-key');
+        if(el.classList.contains('key-masked')){
+          el.textContent = full;
+          el.classList.remove('key-masked');
+          el.title = 'Click to hide';
+        } else {
+          el.textContent = maskKey(full);
+          el.classList.add('key-masked');
+          el.title = 'Click to reveal';
+        }
+      });
+    });
+
+    tbody.querySelectorAll('[data-copy]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var key = btn.getAttribute('data-copy');
+        function onCopied(){
+          btn.textContent = '✓';
+          btn.style.color = 'var(--green)';
+          setTimeout(function(){ btn.textContent = '⎘'; btn.style.color = ''; }, 1500);
+        }
+        /* Use clipboard API if available (HTTPS), fallback for HTTP */
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(key).then(onCopied).catch(function(){ fallbackCopy(key, btn, onCopied); });
+        } else {
+          fallbackCopy(key, btn, onCopied);
+        }
+      });
+    });
+
+    tbody.querySelectorAll('[data-copypwd]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var pwd = decodeURIComponent(btn.getAttribute('data-copypwd'));
+        function onCopied(){
+          btn.textContent = '✓';
+          btn.style.color = 'var(--green)';
+          setTimeout(function(){ btn.textContent = '🔑'; btn.style.color = ''; }, 1500);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(pwd).then(onCopied).catch(function(){ fallbackCopy(pwd, btn, onCopied); });
+        } else {
+          fallbackCopy(pwd, btn, onCopied);
+        }
+      });
+    });
+
+    tbody.querySelectorAll('[data-toggle]').forEach(function(btn){
+      btn.addEventListener('click', function(){ toggleKey(btn.getAttribute('data-toggle')); });
+    });
+    tbody.querySelectorAll('[data-delete]').forEach(function(btn){
+      btn.addEventListener('click', function(){ deleteKey(btn.getAttribute('data-delete')); });
+    });
+    tbody.querySelectorAll('[data-sessions]').forEach(function(btn){
+      btn.addEventListener('click', function(){ toggleDrawer(btn.getAttribute('data-sessions')); });
+    });
+  }
+
+  function toggleKey(id){
+    fetch('/admin/keys/'+id+'/toggle',{ method:'PUT', headers:headers() })
+    .then(function(r){
+      if(r.ok){ toast('Key updated'); loadKeys(); }
+      else r.json().then(function(d){ toast(d.error||'Error','err'); });
+    });
+  }
+
+  function deleteKey(id){
+    if(!confirm('Permanently delete this key and all its sessions?')) return;
+    fetch('/admin/keys/'+id,{ method:'DELETE', headers:headers() })
+    .then(function(r){
+      if(r.ok){ toast('Key deleted'); loadKeys(); }
+      else r.json().then(function(d){ toast(d.error||'Error','err'); });
+    });
+  }
+
+  function toggleDrawer(keyId){
+    var drawer = $('drawer-inner-' + keyId);
+    if(!drawer) return;
+    var isOpen = drawer.classList.contains('open');
+    if(isOpen){ drawer.classList.remove('open'); return; }
+
+    /* Close all others */
+    document.querySelectorAll('.session-drawer.open').forEach(function(d){ d.classList.remove('open'); });
+    drawer.classList.add('open');
+
+    fetch('/admin/keys/'+keyId+'/sessions',{ headers:headers() })
+    .then(function(r){ return r.json(); })
+    .then(function(sessions){
+      if(!sessions.length){
+        drawer.innerHTML = '<div class="empty" style="padding:20px">No sessions yet for this key</div>';
+        return;
+      }
+      var rows = sessions.map(function(s, i){
+        return '<tr>'
+          + '<td style="color:var(--text3);font-size:11px">' + (i+1) + '</td>'
+          + '<td style="font-family:var(--mono);font-size:11px;color:var(--text3)">' + (s.sessionId||'').slice(0,8) + '…</td>'
+          + '<td><span class="badge badge-bound">' + s.phone + '</span></td>'
+          + '<td style="font-family:var(--mono)">₹' + (parseFloat(s.balanceAtLogin)||0).toFixed(2) + '</td>'
+          + '<td>' + (s.betStartTime ? new Date(s.betStartTime).toLocaleTimeString() : '—') + '</td>'
+          + '<td>' + (s.betStopTime  ? new Date(s.betStopTime).toLocaleTimeString()  : '—') + '</td>'
+          + '<td>' + fmtDuration(s.betStartTime, s.betStopTime) + '</td>'
+          + '<td>' + fmtProfit(s.profit) + '</td>'
+          + '<td>' + (s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '—') + '</td>'
+          + '</tr>';
+      }).join('');
+
+      drawer.innerHTML = '<div class="drawer-head"><span>Session Logs</span><span>' + sessions.length + ' sessions</span></div>'
+        + '<div style="overflow-x:auto"><table class="main-table"><thead><tr>'
+        + '<th>#</th><th>Session ID</th><th>Phone</th><th>Balance</th><th>Start</th><th>Stop</th><th>Duration</th><th>Profit</th><th>Date</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    })
+    .catch(function(){ drawer.innerHTML = '<div class="empty">Failed to load sessions</div>'; });
+  }
+
+  function generateKey(){
+    var label = $('newKeyLabel').value.trim() || 'User';
+    var btn = $('btnGenerateKey');
+    btn.disabled = true; btn.textContent = 'Generating…';
+    fetch('/admin/keys/generate',{ method:'POST', headers:headers(), body:JSON.stringify({label:label}) })
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+    .then(function(r){
+      if(r.ok){
+        toast('Key generated: ' + r.data.key);
+        $('newKeyLabel').value = '';
+        loadKeys();
+      } else {
+        toast(r.data.error||'Failed to generate key','err');
+      }
+    })
+    .catch(function(){ toast('Connection error','err'); })
+    .finally(function(){ btn.disabled = false; btn.textContent = '⚡ Generate Key'; });
+  }
+
+  /* ─────────────────────────────────────────────
+     SESSIONS
+  ───────────────────────────────────────────── */
+  function loadAllSessions(){
+    fetch('/admin/sessions',{ headers:headers() })
+    .then(function(r){ return r.json(); })
+    .then(function(list){
+      if(!Array.isArray(list)) return;
+      allSessions = list;
+      $('statSessions').textContent = list.length;
+      renderSessions(list);
+    })
+    .catch(function(){});
+  }
+
+  function populateKeyFilter(keys){
+    var sel = $('filterKey');
+    var current = sel.value;
+    sel.innerHTML = '<option value="">All Keys</option>';
+    keys.forEach(function(k){
+      var opt = document.createElement('option');
+      opt.value = k.key;
+      opt.textContent = (k.label || k.key.slice(0,5)) + ' (' + k.key.slice(0,5) + '…)';
+      sel.appendChild(opt);
+    });
+    if(current) sel.value = current;
+  }
+
+  function renderSessions(list){
+    var filterKey = $('filterKey').value;
+    var filtered = filterKey ? list.filter(function(s){ return s.key === filterKey; }) : list;
+
+    $('sessionCount').textContent = filtered.length + ' sessions';
+
+    var tbody = $('sessionsBody');
+    if(!filtered.length){ tbody.innerHTML = '<tr><td colspan="9" class="empty">No sessions recorded yet</td></tr>'; return; }
+
+    tbody.innerHTML = '';
+    filtered.forEach(function(s, i){
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td style="color:var(--text3);font-size:11px">' + (i+1) + '</td>'
+        + '<td><span style="font-family:var(--mono);font-size:11px;color:var(--gold2)">'
+          + s.key.slice(0,5) + '…' + s.key.slice(-5) + '</span></td>'
+        + '<td><span class="badge badge-bound">' + s.phone + '</span></td>'
+        + '<td style="font-family:var(--mono)">₹' + (parseFloat(s.balanceAtLogin)||0).toFixed(2) + '</td>'
+        + '<td style="font-size:12px">' + (s.betStartTime ? new Date(s.betStartTime).toLocaleTimeString() : '<span style="color:var(--text3)">—</span>') + '</td>'
+        + '<td style="font-size:12px">' + (s.betStopTime  ? new Date(s.betStopTime).toLocaleTimeString()  : '<span style="color:var(--text3)">—</span>') + '</td>'
+        + '<td style="font-family:var(--mono);font-size:12px">' + fmtDuration(s.betStartTime, s.betStopTime) + '</td>'
+        + '<td>' + fmtProfit(s.profit) + '</td>'
+        + '<td>' + fmtDate(s.createdAt) + '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  $('filterKey').addEventListener('change', function(){ renderSessions(allSessions); });
+
+  /* ─────────────────────────────────────────────
+     FREQ MAP
+  ───────────────────────────────────────────── */
+  function loadFreqMap(){
+    fetch('/admin/freqmap',{ headers:headers() })
+    .then(function(r){ return r.json(); })
+    .then(function(map){
+      var tbody = $('freqBody');
+      tbody.innerHTML = '';
+      for(var i = 0; i <= 9; i++){
+        var v = parseInt(map[String(i)]) || 0;
+        var direct = v >= 5 ? 'Big' : 'Small';
+        var opposite = v >= 5 ? 'Small' : 'Big';
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td><span class="freq-num">' + i + '</span></td>'
+          + '<td><span class="freq-arrow">→</span></td>'
+          + '<td><input type="number" min="0" max="9" class="freq-input" id="fq' + i + '" value="' + v + '"></td>'
+          + '<td><span class="tag-' + direct.toLowerCase() + '">' + direct + '</span></td>'
+          + '<td><span class="tag-' + opposite.toLowerCase() + '">' + opposite + '</span></td>';
+        tbody.appendChild(tr);
+      }
+      document.querySelectorAll('.freq-input').forEach(function(inp){
+        inp.addEventListener('input', function(){
+          var row = inp.closest('tr');
+          var val = parseInt(inp.value) || 0;
+          var d = val >= 5 ? 'Big' : 'Small', o = val >= 5 ? 'Small' : 'Big';
+          row.children[3].innerHTML = '<span class="tag-' + d.toLowerCase() + '">' + d + '</span>';
+          row.children[4].innerHTML = '<span class="tag-' + o.toLowerCase() + '">' + o + '</span>';
+        });
+      });
+    })
+    .catch(function(){});
+  }
+
+  function saveFreqMap(){
+    var map = {};
+    for(var i = 0; i <= 9; i++){
+      var v = parseInt($('fq' + i).value);
+      if(isNaN(v) || v < 0 || v > 9){ toast('Invalid value for ' + i, 'err'); return; }
+      map[String(i)] = v;
+    }
+    fetch('/admin/freqmap',{ method:'POST', headers:headers(), body:JSON.stringify(map) })
+    .then(function(r){
+      if(r.ok) toast('FREQ_MAP saved — active on next prediction');
+      else r.json().then(function(d){ toast(d.error,'err'); });
+    })
+    .catch(function(){ toast('Save failed','err'); });
+  }
+
+  /* ─── Event Listeners ─── */
+  $('btnRefresh').addEventListener('click', refreshAll);
+  $('btnRefreshSessions').addEventListener('click', loadAllSessions);
+  $('btnLogout').addEventListener('click', doLogout);
+  $('btnSaveFreq').addEventListener('click', saveFreqMap);
+  $('btnGenerateKey').addEventListener('click', generateKey);
+  $('newKeyLabel').addEventListener('keydown', function(e){ if(e.key==='Enter') generateKey(); });
+
+  /* ─── Boot ─── */
+  checkAuth();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>KINGPIN Quantum — Last Result Engine</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Roboto', 'Inter', sans-serif;
+            background: #09090f;
+            color: #f0f0f8;
+            min-height: 100vh;
+            padding: 15px;
+            max-width: 520px;
+            margin: 0 auto;
+            overflow-x: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .app-header {
+            text-align: center; margin-bottom: 15px; font-size: 18px; font-weight: 900;
+            color: #22c55e; text-transform: uppercase; letter-spacing: 2px;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .app-header span { font-size: 24px; }
+
+        .main-tabs { display: flex; margin-bottom: 20px; background: #111118; border-radius: 8px; border: 1px solid #2a2a3a; overflow: hidden; }
+        .tab-btn { flex: 1; padding: 12px; background: transparent; color: #6b7280; border: none; font-weight: 800; font-size: 12px; text-transform: uppercase; cursor: pointer; transition: 0.3s; letter-spacing: 1px;}
+        .tab-btn.active { background: linear-gradient(135deg, #22c55e, #111118); color: #fff; text-shadow: 0 0 5px rgba(255,255,255,0.5);}
+
+        .timer-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 20px; }
+        .timer-card {
+            background: #111118; border: 2px solid #2a2a3a; border-radius: 10px;
+            padding: 10px 4px; text-align: center; cursor: pointer; transition: all 0.3s ease;
+        }
+        .timer-card.active {
+            background: linear-gradient(135deg, #22c55e, #111118); border-color: #22c55e;
+            box-shadow: 0 4px 15px rgba(34, 197, 94, 0.2);
+        }
+        .timer-card .clock-icon { font-size: 18px; margin-bottom: 4px; }
+        .timer-card .card-title { font-size: 11px; font-weight: 700; color: #f0f0f8; }
+
+        .status-container { background: #111118; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; border: 1px solid #2a2a3a; }
+        .status-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .status-header .mode { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;}
+        .countdown-timer { font-size: 15px; font-weight: 600; background: #18181f; padding: 6px 14px; border-radius: 8px; min-width: 85px; text-align: center; border: 1px solid #2a2a3a; }
+        .countdown-timer span { color: #f59e0b; font-family: monospace; font-size: 18px; letter-spacing: 1px;}
+        .progress-bar-container { width: 100%; height: 8px; background: #18181f; border-radius: 4px; overflow: hidden; margin-bottom: 12px; border: 1px solid #2a2a3a; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #f59e0b); width: 100%; transition: width 0.1s linear; }
+        .progress-fill.fetching { background: #3b82f6; animation: fetchPulse 0.5s infinite alternate; }
+        @keyframes fetchPulse { 0% { opacity: 0.4; } 100% { opacity: 1; } }
+        .status-info { display: flex; justify-content: space-between; font-size: 12px; color: #6b7280; font-weight: bold; text-transform: uppercase;}
+        @keyframes serverBlinkRed {
+            0%, 100% { opacity: 1; color: #ef4444; text-shadow: 0 0 8px rgba(239, 68, 68, 0.8); }
+            50% { opacity: 0.4; color: #ef4444; text-shadow: none; }
+        }
+        .server-blink { animation: serverBlinkRed 1.2s infinite; font-weight: 800 !important; }
+
+        .prediction-box { background: linear-gradient(145deg, #111118, #18181f); border-radius: 12px; padding: 20px 15px; margin-bottom: 20px; border: 1px solid #f59e0b; text-align: center; position: relative; box-shadow: 0 0 20px rgba(245,158,11,.05); min-height: 150px; display: flex; flex-direction: column; justify-content: center; overflow: hidden;}
+        .pred-lbl { font-size: 11px; color: #6b7280; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; font-weight: 700; }
+        #activeEngineDisplay { font-size: 10px; color: #000; padding: 4px 12px; border-radius: 12px; display: inline-block; margin-bottom: 8px; font-weight: 900; letter-spacing: 1px; background: #fbbf24; text-transform: uppercase; }
+        #upcomingPeriodDisplay { font-size: 14px; color: #22c55e; margin-bottom: 8px; font-weight: bold; letter-spacing: 1px; font-family: monospace; }
+        #confDisplay { font-size: 12px; color: #f59e0b; font-weight: 800; margin-bottom: 5px; }
+        #finalPred { font-size: 42px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; margin: 10px 0; transition: all 0.3s; line-height: 1.2; }
+        .c-big { color: #22c55e; text-shadow: 0 0 20px rgba(34,197,94,0.3); }
+        .c-small { color: #60a5fa; text-shadow: 0 0 20px rgba(96,165,250,0.3); }
+        .c-wait { color: #6b7280; text-shadow: none; }
+        .c-skip { color: #f59e0b; text-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
+
+        .stats-bar { display: grid; grid-template-columns: repeat(5, 1fr); background: #111118; border: 1px solid #2a2a3a; border-radius: 10px; padding: 12px 6px; margin-bottom: 20px; gap: 4px; }
+        .stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+        .stat-l { font-size: 9px; color: #6b7280; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 700; text-align: center; }
+        .stat-v { font-family: monospace; font-size: 15px; font-weight: 800; }
+        .stat-v.g { color: #22c55e; } .stat-v.r { color: #ef4444; } .stat-v.o { color: #f59e0b; } .stat-v.c { color: #d946ef; } .stat-v.y { color: #fbbf24; }
+
+        .lvls { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; }
+        .lvl { flex: 1 1 12%; min-width: 34px; padding: 6px 2px; border-radius: 6px; background: #18181f; text-align: center; font-size: 11px; font-weight: 900; color: #6b7280; border: 1px solid #2a2a3a; transition: all 0.3s; font-family: monospace;}
+        .lvl.on { background: linear-gradient(135deg, #18181f, #22c55e); border-color: #22c55e; color: #fff; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.3); }
+        .lvl.on.loss { background: linear-gradient(135deg, #18181f, #ef4444); border-color: #ef4444; box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3); }
+
+        .loss-grid-container { background: #111118; border: 1px solid #2a2a3a; border-radius: 10px; padding: 12px; margin-bottom: 20px; }
+        .loss-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .loss-box { background: #18181f; border: 1px solid #2a2a3a; border-radius: 4px; padding: 4px; text-align: center; display: flex; flex-direction: column; gap: 2px;}
+        .lb-lvl { font-size: 9px; color: #6b7280; font-weight: 800; }
+        .lb-val { font-size: 13px; font-family: monospace; color: #ef4444; font-weight: 900; }
+
+        .table-wrapper { background: #111118; border-radius: 12px; overflow: hidden; border: 1px solid #2a2a3a; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; }
+        thead { background: #18181f; border-bottom: 1px solid #2a2a3a; }
+        th { padding: 10px 2px; font-size: 9px; text-transform: uppercase; color: #6b7280; }
+        td { padding: 8px 2px; border-bottom: 1px solid #2a2a3a; font-family: monospace; font-size: 12px; }
+        .pagination-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding: 5px; }
+        .page-btn { background: #18181f; border: 1px solid #2a2a3a; color: #f0f0f8; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 800; transition: all 0.3s; text-transform: uppercase; }
+        .page-btn:active { transform: scale(0.95); background: #2a2a3a; }
+        .page-indicator { font-size: 11px; color: #6b7280; font-weight: bold; font-family: monospace; letter-spacing: 1px; }
+
+        .res-win { background: rgba(34,197,94,0.2); color: #22c55e; padding: 3px 5px; border-radius: 4px; font-weight: 700; font-size: 10px; display: inline-block;}
+        .res-loss { background: rgba(239,68,68,0.2); color: #ef4444; padding: 3px 5px; border-radius: 4px; font-weight: 700; font-size: 10px; display: inline-block;}
+        .res-wait { background: rgba(107,114,128,0.2); color: #6b7280; padding: 3px 5px; border-radius: 4px; font-weight: 700; font-size: 10px; display: inline-block;}
+        .res-skip { background: rgba(245, 158, 11, 0.2); color: #f59e0b; padding: 3px 5px; border-radius: 4px; font-weight: 700; font-size: 10px; display: inline-block;}
+        
+        @keyframes winPulseRow { 0% { background: rgba(34, 197, 94, 0.3); } 100% { background: transparent; } }
+        @keyframes lossShakeRow { 0%, 100% { background: transparent; transform: translateX(0); } 20%, 60% { transform: translateX(-3px); } 40%, 80% { transform: translateX(3px); } 50% { background: rgba(239, 68, 68, 0.2); } }
+        .new-row.win-row { animation: winPulseRow 1.5s ease; }
+        .new-row.loss-row { animation: lossShakeRow 0.6s ease; }
+        
+        .big { color: #22c55e; font-weight: 700; } .small { color: #60a5fa; font-weight: 700; }
+        .num-green { color: #22c55e; font-weight: 800; }
+        .num-red { color: #ef4444; font-weight: 800; }
+        .num-green-violet { background: linear-gradient(135deg, #22c55e, #d946ef); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; }
+        .num-red-violet { background: linear-gradient(135deg, #ef4444, #d946ef); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; }
+
+        .control-panel {
+            background: #111118; border-radius: 12px; padding: 20px; margin-bottom: 20px;
+            border: 1px solid #2a2a3a; display: flex; flex-direction: column; gap: 15px;
+        }
+        .input-title { font-size: 12px; color: #22c55e; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+        input[type="file"] { background: #18181f; color: #fff; padding: 12px; border-radius: 6px; border: 1px solid #2a2a3a; cursor: pointer; font-family: monospace; font-size: 11px; }
+        textarea { width: 100%; height: 80px; background: #09090f; color: #888; border: 1px dashed #2a2a3a; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; resize: none; }
+        textarea:focus { border-color: #22c55e; color: #fff; outline: none; }
+        .run-btn { background: linear-gradient(135deg, #22c55e, #3b82f6); color: #fff; border: none; padding: 16px; border-radius: 8px; font-size: 16px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; cursor: pointer; transition: 0.2s; }
+        .run-btn:active { transform: scale(0.97); }
+        .run-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+        .runner-table-wrapper { max-height: 500px; overflow-y: auto; }
+        .runner-table-wrapper thead { position: sticky; top: 0; }
+    </style>
+</head>
+<body>
+
+<div class="app-header">
+    <span>⚡</span>
+    KINGPIN QUANTUM
+</div>
+
+<div class="main-tabs">
+    <button id="tabLiveBtn" class="tab-btn active" onclick="switchTab('live')">LIVE ENGINE</button>
+    <button id="tabRunnerBtn" class="tab-btn" onclick="switchTab('runner')">SIMULATION</button>
+</div>
+
+<div id="liveView">
+    <div class="timer-cards" id="timerCards">
+        <div class="timer-card active" data-mode="WinGo_30S" data-ms="30000">
+            <div class="clock-icon">⚡</div><div class="card-title">30 SEC</div>
+        </div>
+        <div class="timer-card" data-mode="WinGo_1M" data-ms="60000">
+            <div class="clock-icon">🕐</div><div class="card-title">1 MIN</div>
+        </div>
+        <div class="timer-card" data-mode="WinGo_3M" data-ms="180000">
+            <div class="clock-icon">🕒</div><div class="card-title">3 MIN</div>
+        </div>
+        <div class="timer-card" data-mode="WinGo_5M" data-ms="300000">
+            <div class="clock-icon">🕔</div><div class="card-title">5 MIN</div>
+        </div>
+    </div>
+
+    <div class="status-container">
+        <div class="status-header">
+            <div class="mode">Target: <span style="color: #fbbf24;">LAST RESULT ENGINE</span></div>
+            <div class="countdown-timer" id="countdownTimer"><span>00:00</span></div>
+        </div>
+        <div class="progress-bar-container">
+            <div class="progress-fill" id="progressBar"></div>
+        </div>
+        <div class="status-info">
+            <div>API: <span id="apiStatus" class="server-blink">Connecting...</span></div>
+            <div>Rounds: <span id="roundCount" style="color:#60a5fa;">0</span></div>
+        </div>
+    </div>
+
+    <div class="prediction-box" id="predBody">
+        <div class="pred-lbl">⚡ LAST RESULT PREDICITON</div>
+        <div id="activeEngineDisplay" style="display:none;">-</div>
+        <div id="upcomingPeriodDisplay">-</div>
+        <div id="confDisplay">-</div>
+        <div id="finalPred" class="c-wait">WAIT</div>
+    </div>
+
+    <div class="stats-bar">
+        <div class="stat"><span class="stat-l">WINS</span><span class="stat-v g" id="sW">0</span></div>
+        <div class="stat"><span class="stat-l">LOSSES</span><span class="stat-v r" id="sL">0</span></div>
+        <div class="stat"><span class="stat-l">ACC RATE</span><span class="stat-v o" id="sR">–</span></div>
+        <div class="stat"><span class="stat-l">MAX W</span><span class="stat-v g" id="sMaxW">0</span></div>
+        <div class="stat"><span class="stat-l">MAX LEVEL</span><span class="stat-v r" id="sMaxL">0</span></div>
+    </div>
+
+    <div class="lvls" id="lvlContainer"></div>
+
+    <div id="historySection">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 id="historyHeader" style="font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">📊 History (0)</h3>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead><tr><th>Period</th><th>Num</th><th>B/S</th><th>Pred</th><th>Mode/Node</th><th>Res</th></tr></thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+        <div class="pagination-controls">
+            <button id="prevPageBtn" class="page-btn">◄ PREV</button>
+            <span id="pageIndicator" class="page-indicator">PAGE 1 / 1</span>
+            <button id="nextPageBtn" class="page-btn">NEXT ►</button>
+        </div>
+    </div>
+</div>
+
+<div id="runnerView" style="display:none;">
+    <div class="control-panel">
+        <div class="input-title">Load Game History (.CSV)</div>
+        <input type="file" id="csvFile" accept=".csv" multiple>
+        <div style="text-align: center; color: #6b7280; font-size: 12px; font-weight: bold;">OR PASTE TEXT DIRECTLY</div>
+        <textarea id="csvText" placeholder="period,number (one per line)"></textarea>
+        <div id="loadedStatus" style="color: #22c55e; font-size: 14px; font-weight: 900; text-align: center; padding: 5px 0;">0 Periods Loaded</div>
+        <button class="run-btn" id="runBtn">START SIMULATION</button>
+    </div>
+
+    <div class="stats-bar">
+        <div class="stat"><span class="stat-l">WINS</span><span class="stat-v g" id="r_sW">0</span></div>
+        <div class="stat"><span class="stat-l">LOSSES</span><span class="stat-v r" id="r_sL">0</span></div>
+        <div class="stat"><span class="stat-l">ACC RATE</span><span class="stat-v o" id="r_sR">0%</span></div>
+        <div class="stat"><span class="stat-l">MAX LEVEL</span><span class="stat-v r" id="r_sMaxL">0</span></div>
+        <div class="stat"><span class="stat-l">RESETS</span><span class="stat-v y" id="r_sBusts">0</span></div>
+    </div>
+
+    <div class="lvls" id="r_lvlContainer"></div>
+
+    <div class="loss-grid-container">
+        <div class="input-title" style="text-align: center; margin-bottom: 8px;">Continuous Loss Distribution (By Level)</div>
+        <div class="loss-grid" id="r_lossGrid"></div>
+    </div>
+
+    <div class="table-wrapper runner-table-wrapper">
+        <table>
+            <thead><tr><th>Period</th><th>Num</th><th>B/S</th><th>Pred</th><th>Mode/Node</th><th>Res</th></tr></thead>
+            <tbody id="runner_tableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// KINGPIN QUANTUM — LAST RESULT ENGINE (COPY & SKIP)
+// ════════════════════════════════════════════════════════════════
+
+const MAX_LVL = 14; 
+
+function getColorClass(n) {
+    if (n === 0) return 'num-red-violet';
+    if (n === 5) return 'num-green-violet';
+    if ([1,3,7,9].includes(n)) return 'num-green';
+    if ([2,4,6,8].includes(n)) return 'num-red';
+    return '';
+}
+
+function switchTab(tabName) {
+    document.getElementById('tabLiveBtn').classList.remove('active');
+    document.getElementById('tabRunnerBtn').classList.remove('active');
+    document.getElementById('liveView').style.display = 'none';
+    document.getElementById('runnerView').style.display = 'none';
+    if (tabName === 'live') {
+        document.getElementById('tabLiveBtn').classList.add('active');
+        document.getElementById('liveView').style.display = 'block';
+    } else {
+        document.getElementById('tabRunnerBtn').classList.add('active');
+        document.getElementById('runnerView').style.display = 'block';
+    }
+}
+
+// ─── LAST RESULT PREDICITON LOGIC ──────────────────────────────
+
+function runCopyCatEngine(history, skipNext) {
+    if (history.length < 1) return {
+        predSize: 'WAIT', top: 'Insufficient Data'
+    };
+
+    if (skipNext) {
+        return { predSize: 'SKIP', top: 'Skipping After Loss' };
+    }
+
+    const lastResult = history[0];
+    return {
+        predSize: lastResult.actualBS,
+        top: 'Last Result Copy'
+    };
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// LIVE ENGINE
+// ════════════════════════════════════════════════════════════════
+const BASE_URL = 'https://draw.ar-lottery01.com/WinGo';
+let mode = 'WinGo_30S', cycleMs = 30000;
+let lastIss = null, running = false, fetching = false, uiTick = null;
+let historyBuffer = [];
+let currentPrediction = null;
+let liveSkipNext = false; // State to track skipping
+
+let wins = 0, losses = 0, level = 0;
+let winStreak = 0, lossStreak = 0, maxWinStreak = 0, maxLossStreak = 0;
+let currentPage = 1;
+const rowsPerPage = 10;
+
+function buildLvlUI(containerId) {
+    const c = document.getElementById(containerId);
+    c.innerHTML = '';
+    for (let i = 0; i < MAX_LVL; i++) {
+        const d = document.createElement('div');
+        d.className = 'lvl';
+        d.id = containerId + '_lv' + (i+1);
+        d.innerText = `L${i+1}`;
+        c.appendChild(d);
+    }
+}
+
+function updateLvlUI(containerId, currentLevel) {
+    for (let i = 0; i < MAX_LVL; i++) {
+        const el = document.getElementById(containerId + '_lv' + (i+1));
+        if (!el) continue;
+        el.classList.remove('on', 'loss');
+        if (i === currentLevel) {
+            el.classList.add('on');
+            if (currentLevel > 0) el.classList.add('loss');
+        }
+    }
+}
+
+function updateStats() {
+    document.getElementById('sW').textContent = wins;
+    document.getElementById('sL').textContent = losses;
+    const t = wins + losses;
+    document.getElementById('sR').textContent = t > 0 ? Math.round((wins/t)*100) + '%' : '–';
+    document.getElementById('sMaxW').textContent = maxWinStreak;
+    document.getElementById('sMaxL').textContent = maxLossStreak;
+    document.getElementById('roundCount').textContent = historyBuffer.length;
+    updateLvlUI('lvlContainer', level);
+}
+
+function renderPrediction() {
+    const el = document.getElementById('finalPred');
+    const periodEl = document.getElementById('upcomingPeriodDisplay');
+    const engEl = document.getElementById('activeEngineDisplay');
+    const confEl = document.getElementById('confDisplay');
+    if (!currentPrediction) return;
+    
+    periodEl.textContent = `Period: …${String(currentPrediction.period).slice(-5)}`;
+    
+    if (currentPrediction.top) {
+        engEl.textContent = `LOGIC: ${currentPrediction.top}`;
+        engEl.style.display = 'inline-block';
+    } else { engEl.style.display = 'none'; }
+    
+    confEl.textContent = `Level: ${level + 1} / ${MAX_LVL} | Conf: High`;
+    
+    if (!currentPrediction.pred || currentPrediction.pred === 'WAIT') {
+        el.textContent = 'WAIT'; el.className = 'c-wait';
+    } else if (currentPrediction.pred === 'SKIP') {
+        el.textContent = 'SKIP'; el.className = 'c-skip';
+    } else {
+        el.textContent = currentPrediction.pred;
+        el.className = currentPrediction.pred === 'BIGG' ? 'c-big' : 'c-small';
+    }
+}
+
+function renderTable() {
+    const tb = document.getElementById('tableBody');
+    tb.innerHTML = '';
+    document.getElementById('historyHeader').textContent = `📊 History (${historyBuffer.length})`;
+    const totalPages = Math.max(1, Math.ceil(historyBuffer.length / rowsPerPage));
+    if (currentPage > totalPages) currentPage = totalPages;
+    document.getElementById('pageIndicator').textContent = `PAGE ${currentPage} / ${totalPages}`;
+    const startIdx = (currentPage - 1) * rowsPerPage;
+    const pageData = historyBuffer.slice(startIdx, startIdx + rowsPerPage);
+    
+    pageData.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        const bsClass = row.actualBS === 'BIGG' ? 'big' : 'small';
+        const numClass = getColorClass(row.number);
+        let resHtml = '<span style="color:#555">–</span>';
+        
+        if (row.result === 'WIN') resHtml = '<span class="res-win">WIN</span>';
+        else if (row.result === 'LOSS') resHtml = '<span class="res-loss">LOSS</span>';
+        else if (row.result === 'SKIP') resHtml = '<span class="res-skip">SKIP</span>';
+        
+        const predColor = row.pred === 'BIGG' ? '#22c55e' : (row.pred === 'SMALL' ? '#60a5fa' : (row.pred === 'SKIP' ? '#f59e0b' : '#888'));
+        
+        if (idx === 0 && currentPage === 1 && running) {
+            if (row.result === 'WIN') tr.classList.add('new-row', 'win-row');
+            if (row.result === 'LOSS') tr.classList.add('new-row', 'loss-row');
+        }
+        tr.innerHTML = `
+            <td>…${String(row.period).slice(-5)}</td>
+            <td><span class="${numClass}">${row.number}</span></td>
+            <td><span class="${bsClass}">${row.actualBS}</span></td>
+            <td><span style="color:${predColor}; font-weight:bold;">${row.pred || '–'}</span></td>
+            <td style="font-size:9px; color:#fbbf24; font-weight:bold; letter-spacing:0.5px; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${row.top || '–'}">${row.top || '–'}</td>
+            <td>${resHtml}</td>
+        `;
+        tb.appendChild(tr);
+    });
+}
+
+document.getElementById('prevPageBtn').addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderTable(); } });
+document.getElementById('nextPageBtn').addEventListener('click', () => { const tp = Math.ceil(historyBuffer.length / rowsPerPage); if (currentPage < tp) { currentPage++; renderTable(); } });
+
+function setApiStatus(ok) {
+    const el = document.getElementById('apiStatus');
+    if (ok) { el.textContent = 'Connected'; el.style.color = '#22c55e'; el.className = ''; }
+    else { el.textContent = 'Lagging...'; el.style.color = '#ef4444'; el.className = 'server-blink'; }
+}
+
+function processResult(item) {
+    const actualNum = parseInt(item.number);
+    const actualBS = actualNum >= 5 ? 'BIGG' : 'SMALL';
+    let result = null, top = null, predStr = '–';
+
+    if (currentPrediction && currentPrediction.period === String(item.issueNumber)) {
+        predStr = currentPrediction.pred;
+        top = currentPrediction.top;
+
+        if (predStr === 'SKIP') {
+            result = 'SKIP';
+            liveSkipNext = false; // Reset skip loop to resume on next prediction
+        } else if (predStr !== 'WAIT' && predStr !== '–') {
+            const won = (predStr === actualBS);
+            if (won) {
+                wins++; winStreak++; lossStreak = 0;
+                maxWinStreak = Math.max(maxWinStreak, winStreak);
+                level = 0;
+                result = 'WIN';
+                liveSkipNext = false; // Ensure flag is clean on win
+            } else {
+                losses++; lossStreak++; winStreak = 0;
+                maxLossStreak = Math.max(maxLossStreak, lossStreak);
+                
+                level++;
+                if (level >= MAX_LVL) level = 0;
+                
+                result = 'LOSS';
+                liveSkipNext = true; // Trigger skip for the exact next round
+            }
+        }
+    }
+
+    historyBuffer.unshift({
+        period: String(item.issueNumber), number: actualNum, actualBS,
+        pred: predStr, top, result
+    });
+    if (historyBuffer.length > 200) historyBuffer.pop();
+}
+
+function makeNextPrediction(latestIssue) {
+    const nextPeriod = (BigInt(latestIssue) + 1n).toString();
+    if (historyBuffer.length === 0) return;
+
+    const copyEngineOutput = runCopyCatEngine(historyBuffer, liveSkipNext);
+
+    currentPrediction = { 
+        period: nextPeriod, 
+        pred: copyEngineOutput.predSize,
+        top: copyEngineOutput.top
+    };
+}
+
+async function runCoreEngine() {
+    fetching = true;
+    try {
+        const url = `${BASE_URL}/${mode}/GetHistoryIssuePage.json?pageSize=100&t=${Date.now()}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        setApiStatus(true);
+        if (data.code === 0 && data.data && data.data.list && data.data.list.length > 0) {
+            const list = data.data.list;
+            const latestIssue = String(list[0].issueNumber);
+            if (latestIssue !== lastIss) {
+                if (historyBuffer.length === 0) {
+                    const chronoList = [...list].reverse();
+                    for (const item of chronoList) {
+                        processResult(item);
+                        makeNextPrediction(String(item.issueNumber));
+                    }
+                } else {
+                    const newItems = [];
+                    for (const item of list) {
+                        if (String(item.issueNumber) === lastIss) break;
+                        newItems.push(item);
+                    }
+                    newItems.reverse().forEach(item => {
+                        processResult(item);
+                        makeNextPrediction(String(item.issueNumber));
+                    });
+                }
+                lastIss = latestIssue;
+                updateStats(); renderPrediction(); renderTable();
+            }
+        }
+    } catch(e) { console.warn('Fetch Error:', e); setApiStatus(false); }
+    fetching = false;
+}
+
+function startTimer() {
+    if (uiTick) clearInterval(uiTick);
+    uiTick = setInterval(() => {
+        if (!running) return;
+        const pos = Date.now() % cycleMs;
+        const leftMs = cycleMs - pos;
+        if (leftMs <= 2000 && !fetching && pos >= (cycleMs - 2000)) runCoreEngine();
+        const tEl = document.getElementById('countdownTimer');
+        const pb = document.getElementById('progressBar');
+        pb.className = fetching ? 'progress-fill fetching' : 'progress-fill';
+        const secs = Math.ceil(leftMs / 1000);
+        if (cycleMs === 30000) tEl.innerHTML = `<span>00:${String(secs).padStart(2,'0')}</span>`;
+        else { const m = Math.floor(secs/60), s = secs%60; tEl.innerHTML = `<span>${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}</span>`; }
+        if (fetching) pb.style.width = '100%';
+        else pb.style.width = (leftMs / cycleMs * 100) + '%';
+    }, 50);
+}
+
+async function startEngine() {
+    running = false; fetching = false; if (uiTick) clearInterval(uiTick);
+    lastIss = null; historyBuffer = []; currentPrediction = null; liveSkipNext = false;
+    wins = 0; losses = 0; level = 0;
+    winStreak = 0; lossStreak = 0; maxWinStreak = 0; maxLossStreak = 0;
+    currentPage = 1;
+    updateStats(); renderTable();
+    await runCoreEngine();
+    running = true; startTimer();
+}
+
+document.querySelectorAll('.timer-card').forEach(card => {
+    card.addEventListener('click', () => {
+        document.querySelectorAll('.timer-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        mode = card.dataset.mode;
+        cycleMs = parseInt(card.dataset.ms);
+        startEngine();
+    });
+});
+
+// ════════════════════════════════════════════════════════════════
+// SIMULATION (AUTO RUNNER)
+// ════════════════════════════════════════════════════════════════
+
+let rLevelLossCounts = new Array(MAX_LVL).fill(0);
+
+function buildLossGrid() {
+    const grid = document.getElementById('r_lossGrid');
+    grid.innerHTML = '';
+    for(let i=0; i<MAX_LVL; i++) {
+        grid.innerHTML += `<div class="loss-box"><span class="lb-lvl">L${i+1}</span><span class="lb-val" id="rlc_${i}">0</span></div>`;
+    }
+}
+function updateLossGrid() {
+    for(let i=0; i<MAX_LVL; i++) {
+        const el = document.getElementById(`rlc_${i}`);
+        if(el) el.textContent = rLevelLossCounts[i];
+    }
+}
+
+function updateLoadedCount() {
+    const text = document.getElementById('csvText').value;
+    const lines = text.split('\n').filter(line => { const cols = line.split(','); return cols.length >= 2 && !isNaN(parseInt(cols[1].replace(/["']/g, '').trim())); });
+    document.getElementById('loadedStatus').innerText = lines.length + " Periods Loaded";
+}
+document.getElementById('csvText').addEventListener('input', updateLoadedCount);
+document.getElementById('csvFile').addEventListener('change', async function(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    let combinedText = '';
+    for (let i = 0; i < files.length; i++) {
+        const text = await new Promise(resolve => { const reader = new FileReader(); reader.onload = evt => resolve(evt.target.result); reader.readAsText(files[i]); });
+        combinedText += text + '\n';
+    }
+    document.getElementById('csvText').value = combinedText;
+    updateLoadedCount();
+});
+
+document.getElementById('runBtn').addEventListener('click', function() {
+    const rawText = document.getElementById('csvText').value;
+    if (!rawText.trim()) { alert("Paste data or select file first."); return; }
+    const lines = rawText.split('\n').filter(l => l.trim());
+    let tempData = [];
+    for (const line of lines) {
+        const cols = line.split(',');
+        if (cols.length < 2) continue;
+        const periodStr = cols[0].replace(/["']/g, '').trim();
+        const numStr = cols[1].replace(/["']/g, '').trim();
+        if (numStr === '' || isNaN(numStr)) continue;
+        tempData.push({ period: periodStr, number: parseInt(numStr), actualBS: parseInt(numStr) >= 5 ? 'BIGG' : 'SMALL' });
+    }
+    if (tempData.length === 0) { alert("No valid data found. Format: period,number"); return; }
+    tempData.sort((a,b) => { try { return BigInt(a.period) < BigInt(b.period) ? -1 : 1; } catch { return a.period.localeCompare(b.period); } });
+
+    this.disabled = true; this.innerText = "SIMULATING COPYCAT ENGINE...";
+
+    let rWins = 0, rLosses = 0, rLevel = 0;
+    let rMaxLevel = 0, rLossStreak = 0, rResets = 0;
+    let rPred = null;
+    let rBuffer = [];
+    let simSkipNext = false; // State to track skipping
+    
+    rLevelLossCounts = new Array(MAX_LVL).fill(0);
+    updateLossGrid();
+    const tb = document.getElementById('runner_tableBody');
+    tb.innerHTML = '';
+
+    let idx = 0;
+    const timer = setInterval(() => {
+        const batchSize = Math.min(10, tempData.length - idx);
+        for (let b = 0; b < batchSize; b++) {
+            if (idx >= tempData.length) break;
+            const draw = tempData[idx];
+            let result = null, topEng = '–', predStr = '–';
+
+            if (rPred) {
+                predStr = rPred.pred;
+                topEng = rPred.top;
+
+                if (predStr === 'SKIP') {
+                    result = 'SKIP';
+                    simSkipNext = false; // Reset to resume after skip round finishes
+                } else if (predStr !== 'WAIT') {
+                    const won = (predStr === draw.actualBS);
+                    if (won) {
+                        rWins++; rLossStreak = 0;
+                        rLevel = 0;
+                        result = 'WIN';
+                        simSkipNext = false;
+                    } else {
+                        rLosses++; 
+                        if(rLevel < MAX_LVL) rLevelLossCounts[rLevel]++; 
+                        
+                        rLossStreak++;
+                        rMaxLevel = Math.max(rMaxLevel, rLossStreak);
+                        
+                        rLevel++;
+                        if (rLevel >= MAX_LVL) {
+                            rResets++;
+                            rLevel = 0;
+                        }
+                        result = 'LOSS';
+                        simSkipNext = true; // Trigger skip for immediate next iteration
+                    }
+                }
+            }
+
+            rBuffer.unshift(draw);
+            if (rBuffer.length > 200) rBuffer.pop();
+
+            // Run next prediction (passing the simSkipNext flag)
+            const engineOutput = runCopyCatEngine(rBuffer, simSkipNext);
+            rPred = { pred: engineOutput.predSize, top: engineOutput.top };
+
+            // Render DOM row
+            const tr = document.createElement('tr');
+            const bsClass = draw.actualBS === 'BIGG' ? 'big' : 'small';
+            const numClass = getColorClass(draw.number);
+            
+            let resHtml = '<span style="color:#555">–</span>';
+            if (result === 'WIN') resHtml = '<span class="res-win">WIN</span>';
+            else if (result === 'LOSS') resHtml = '<span class="res-loss">LOSS</span>';
+            else if (result === 'SKIP') resHtml = '<span class="res-skip">SKIP</span>';
+            
+            const predColor = predStr === 'BIGG' ? '#22c55e' : (predStr === 'SMALL' ? '#60a5fa' : (predStr === 'SKIP' ? '#f59e0b' : '#888'));
+            
+            tr.innerHTML = `
+                <td>…${String(draw.period).slice(-5)}</td>
+                <td><span class="${numClass}">${draw.number}</span></td>
+                <td><span class="${bsClass}">${draw.actualBS}</span></td>
+                <td style="color:${predColor}; font-weight:bold;">${predStr}</td>
+                <td style="font-size:9px; color:#fbbf24; font-weight:bold; letter-spacing:0.5px; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${topEng}">${topEng}</td>
+                <td>${resHtml}</td>
+            `;
+            
+            tb.prepend(tr);
+            while(tb.children.length > 50) tb.removeChild(tb.lastChild);
+            
+            idx++;
+        }
+
+        const total = rWins + rLosses;
+        document.getElementById('r_sW').textContent = rWins;
+        document.getElementById('r_sL').textContent = rLosses;
+        document.getElementById('r_sR').textContent = total > 0 ? Math.round((rWins/total)*100) + '%' : '0%';
+        document.getElementById('r_sMaxL').textContent = rMaxLevel;
+        document.getElementById('r_sBusts').textContent = rResets;
+        updateLvlUI('r_lvlContainer', rLevel);
+        updateLossGrid();
+
+        if (idx >= tempData.length) {
+            clearInterval(timer);
+            document.getElementById('runBtn').innerText = "SIMULATION COMPLETE ✓";
+            document.getElementById('runBtn').disabled = false;
+        }
+    }, 20);
+});
+
+// ════════════════════════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════════════════════════
+document.addEventListener("DOMContentLoaded", () => {
+    buildLvlUI('lvlContainer');
+    buildLvlUI('r_lvlContainer');
+    buildLossGrid();
+    startEngine();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WinGo History Export — KINGPIN 3</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d0d1a;
+    color: #e0e0f0;
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: #13131f;
+    border: 1px solid #2a2a45;
+    border-radius: 12px;
+    padding: 32px;
+    width: 100%;
+    max-width: 680px;
+    box-shadow: 0 8px 40px rgba(0,0,255,0.08);
+  }
+  h1 {
+    font-size: 1.3rem;
+    color: #a78bfa;
+    margin-bottom: 6px;
+    letter-spacing: 0.04em;
+  }
+  .sub {
+    font-size: 0.78rem;
+    color: #555577;
+    margin-bottom: 28px;
+  }
+  label {
+    display: block;
+    font-size: 0.75rem;
+    color: #8888aa;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  input[type=text], input[type=number] {
+    width: 100%;
+    background: #1a1a2e;
+    border: 1px solid #2a2a45;
+    border-radius: 6px;
+    color: #e0e0f0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.78rem;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    outline: none;
+    transition: border 0.2s;
+  }
+  input:focus { border-color: #7c3aed; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  .btn {
+    width: 100%;
+    padding: 13px;
+    border-radius: 8px;
+    border: none;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    font-weight: bold;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+    margin-top: 4px;
+  }
+  #btnFetch {
+    background: linear-gradient(135deg, #7c3aed, #4f46e5);
+    color: #fff;
+  }
+  #btnFetch:hover:not(:disabled) { filter: brightness(1.15); }
+  #btnFetch:disabled { opacity: 0.4; cursor: not-allowed; }
+  #btnDownload {
+    background: linear-gradient(135deg, #059669, #065f46);
+    color: #fff;
+    display: none;
+    margin-top: 10px;
+  }
+  #btnDownload:hover { filter: brightness(1.15); }
+
+  .progress-wrap {
+    margin-top: 20px;
+    display: none;
+  }
+  .progress-bar-bg {
+    background: #1a1a2e;
+    border-radius: 999px;
+    height: 8px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #7c3aed, #06b6d4);
+    border-radius: 999px;
+    transition: width 0.3s;
+    width: 0%;
+  }
+  .progress-text {
+    font-size: 0.75rem;
+    color: #8888aa;
+    text-align: center;
+  }
+
+  .log {
+    margin-top: 20px;
+    background: #0a0a14;
+    border: 1px solid #1e1e35;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 0.72rem;
+    color: #6677aa;
+    height: 160px;
+    overflow-y: auto;
+    display: none;
+  }
+  .log .ok   { color: #34d399; }
+  .log .err  { color: #f87171; }
+  .log .warn { color: #fbbf24; }
+  .log .info { color: #a78bfa; }
+
+  .stats {
+    display: none;
+    margin-top: 18px;
+    background: #0f0f20;
+    border: 1px solid #2a2a45;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .stat-box {
+    text-align: center;
+    padding: 10px;
+    background: #13131f;
+    border-radius: 6px;
+    border: 1px solid #1e1e35;
+  }
+  .stat-val { font-size: 1.4rem; font-weight: bold; color: #a78bfa; }
+  .stat-lbl { font-size: 0.65rem; color: #555577; margin-top: 2px; text-transform: uppercase; }
+  .stat-big { color: #f87171; }
+  .stat-sml { color: #60a5fa; }
+
+  .hint {
+    font-size: 0.68rem;
+    color: #3a3a5a;
+    margin-top: 6px;
+  }
+  hr { border: none; border-top: 1px solid #1e1e35; margin: 20px 0; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>📥 WinGo 30S — History Export</h1>
+  <p class="sub">Fetch up to 500 game records via authenticated API → download CSV</p>
+
+  <hr>
+
+  <label>Lottery Token (auto-loaded from session if available)</label>
+  <input type="text" id="tokenInput" placeholder="Paste lotteryToken here or let it auto-load…" />
+  <p class="hint">Token is read from your active KINGPIN session (sessionStorage). Paste manually if not found.</p>
+
+  <div class="row" style="margin-top:8px;">
+    <div>
+      <label>Total Records</label>
+      <input type="number" id="totalRecords" value="500" min="10" max="500" step="10" />
+    </div>
+    <div>
+      <label>Page Size</label>
+      <input type="number" id="pageSize" value="10" min="10" max="10" step="10" readonly />
+    </div>
+    <div>
+      <label>Game Mode</label>
+      <input type="text" id="gameCode" value="WinGo_30S" readonly />
+    </div>
+  </div>
+
+  <button class="btn" id="btnFetch" onclick="startFetch()">⚡ Fetch History</button>
+  <button class="btn" id="btnDownload" onclick="downloadCSV()">⬇ Download CSV</button>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+    <div class="progress-text" id="progressText">Fetching page 0 / 0…</div>
+  </div>
+
+  <div class="log" id="logBox"></div>
+  <div class="stats" id="statsBox">
+    <div class="stats-grid" id="statsGrid"></div>
+  </div>
+</div>
+
+<script>
+// ── Auto-load token from KINGPIN sessionStorage ──
+(function() {
+  try {
+    const raw = sessionStorage.getItem('kp_accounts');
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (arr && arr.length > 0 && arr[0].lotteryToken) {
+        document.getElementById('tokenInput').value = arr[0].lotteryToken;
+        log('info', `✓ Auto-loaded token from session (account: ${arr[0].phone || 'unknown'})`);
+      }
+    }
+  } catch(e) {}
+})();
+
+let allRecords = [];
+
+function log(type, msg) {
+  const box = document.getElementById('logBox');
+  box.style.display = 'block';
+  const line = document.createElement('div');
+  line.className = type;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function setProgress(cur, total) {
+  const pct = total > 0 ? Math.round((cur / total) * 100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `Fetching page ${cur} / ${total} — ${allRecords.length} records`;
+}
+
+async function startFetch() {
+  const token = document.getElementById('tokenInput').value.trim();
+  if (!token) { log('err', 'No token — paste your lotteryToken first.'); return; }
+
+  const totalWant = parseInt(document.getElementById('totalRecords').value) || 500;
+  const pageSize  = 10;
+  const totalPages = Math.ceil(totalWant / pageSize);
+  const gameCode  = document.getElementById('gameCode').value.trim();
+
+  allRecords = [];
+  document.getElementById('btnFetch').disabled = true;
+  document.getElementById('btnDownload').style.display = 'none';
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('statsBox').style.display = 'none';
+  log('info', `Starting fetch: ${totalPages} pages × ${pageSize} = up to ${totalPages * pageSize} records`);
+
+  let serverTotalPages = totalPages;
+
+  for (let page = 1; page <= totalPages && page <= serverTotalPages; page++) {
+    setProgress(page - 1, totalPages);
+    try {
+      const url = `/api/goa/lottery/GetHistoryIssuePage?gameCode=${gameCode}&pageNo=${page}&pageSize=${pageSize}`;
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (res.status === 401) {
+        log('err', `Page ${page}: 401 Unauthorized — token expired or invalid.`);
+        break;
+      }
+      if (!res.ok) {
+        log('warn', `Page ${page}: HTTP ${res.status} — skipping.`);
+        continue;
+      }
+
+      const json = await res.json();
+      if (json.code !== 0 || !json.data || !Array.isArray(json.data.list)) {
+        log('warn', `Page ${page}: API code=${json.code} msg=${json.msg || '?'} — stopping.`);
+        break;
+      }
+
+      const list = json.data.list;
+      if (list.length === 0) { log('warn', `Page ${page}: empty list — done.`); break; }
+
+      // Update server total pages
+      if (json.data.totalPage) serverTotalPages = Math.min(totalPages, json.data.totalPage);
+
+      for (const item of list) {
+        allRecords.push({
+          issueNumber: item.issueNumber || item.issue_number || '',
+          number:      item.number ?? '',
+          colour:      item.colour  || item.color || '',
+          openTime:    item.openTime || item.open_time || '',
+          bs:          (parseInt(item.number) >= 5) ? 'B' : 'S',
+        });
+      }
+
+      log('ok', `Page ${page}/${serverTotalPages}: +${list.length} records (total: ${allRecords.length})`);
+
+      // Small delay to avoid hammering
+      await new Promise(r => setTimeout(r, 150));
+
+    } catch(e) {
+      log('err', `Page ${page}: fetch error — ${e.message}`);
+      break;
+    }
+  }
+
+  setProgress(totalPages, totalPages);
+  log(allRecords.length > 0 ? 'ok' : 'err',
+      `Done. Total records fetched: ${allRecords.length}`);
+
+  if (allRecords.length > 0) {
+    document.getElementById('btnDownload').style.display = 'block';
+    showStats();
+  }
+  document.getElementById('btnFetch').disabled = false;
+}
+
+function showStats() {
+  const total = allRecords.length;
+  const bigs  = allRecords.filter(r => r.bs === 'B').length;
+  const smalls = total - bigs;
+  const nums  = allRecords.map(r => parseInt(r.number)).filter(n => !isNaN(n));
+  const evens = nums.filter(n => n % 2 === 0).length;
+
+  // Max run length
+  let maxRun = 1, curRun = 1;
+  for (let i = 1; i < allRecords.length; i++) {
+    if (allRecords[i].bs === allRecords[i-1].bs) { curRun++; maxRun = Math.max(maxRun, curRun); }
+    else curRun = 1;
+  }
+
+  const grid = document.getElementById('statsGrid');
+  grid.innerHTML = `
+    <div class="stat-box"><div class="stat-val">${total}</div><div class="stat-lbl">Records</div></div>
+    <div class="stat-box"><div class="stat-val stat-big">${bigs}</div><div class="stat-lbl">Big (≥5)</div></div>
+    <div class="stat-box"><div class="stat-val stat-sml">${smalls}</div><div class="stat-lbl">Small (<5)</div></div>
+    <div class="stat-box"><div class="stat-val">${(bigs/total*100).toFixed(1)}%</div><div class="stat-lbl">Big %</div></div>
+    <div class="stat-box"><div class="stat-val">${evens}</div><div class="stat-lbl">Even nums</div></div>
+    <div class="stat-box"><div class="stat-val">${maxRun}</div><div class="stat-lbl">Max streak</div></div>
+  `;
+  document.getElementById('statsBox').style.display = 'block';
+}
+
+function downloadCSV() {
+  if (!allRecords.length) return;
+  const cols = ['issueNumber','number','bs','colour','openTime'];
+  const rows = [cols.join(',')];
+  for (const r of allRecords) {
+    rows.push(cols.map(c => `"${String(r[c] ?? '').replace(/"/g, '""')}"`).join(','));
+  }
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `wingo_history_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.csv`;
+  a.click();
+  log('ok', `CSV downloaded: ${allRecords.length} rows → ${a.download}`);
+}
+</script>
+</body>
+</html>
