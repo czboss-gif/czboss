@@ -303,9 +303,19 @@ async function relogin(phone, pwd) {
   const username = cleaned.length <= 10 ? '91' + cleaned : cleaned;
 
   try {
+    /* ── DEBUG: what IP does GOA see us as? (remove after diagnosis) ── */
+    try {
+      const ipRes = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(4000) });
+      const ipJson = await ipRes.json();
+      console.log(`[RELOGIN-DBG] outbound IP GOA sees = ${ipJson.ip}`);
+    } catch (e) {
+      console.log(`[RELOGIN-DBG] outbound IP lookup failed: ${e.message}`);
+    }
+
     /* Step 1: Get captcha */
     const captchaPayload = signWebapi({});
     const captchaRes = await httpPost(`${GOA_WEB}/api/webapi/Captcha`, captchaPayload);
+    console.log(`[RELOGIN-DBG] captcha resp: code=${captchaRes?.code} msg=${JSON.stringify(captchaRes?.msg)} hasData=${!!captchaRes?.data} captchaId=${captchaRes?.data?.captchaId ? 'yes' : 'no'}`);
     if (!captchaRes || captchaRes.code !== 0 || !captchaRes.data) {
       return { ok: false, msg: 'Captcha fetch failed: ' + (captchaRes?.msg || 'unknown') };
     }
@@ -341,6 +351,10 @@ async function relogin(phone, pwd) {
 
     const loginPayload = signWebapi(loginBody);
     const loginRes = await httpPost(`${GOA_WEB}/api/webapi/Login`, loginPayload);
+
+    /* ── DEBUG: raw GOA login response (tokens masked). Reveals geo/risk codes
+       hidden behind the generic "Verification failed" msg. (remove after diagnosis) ── */
+    console.log(`[RELOGIN-DBG] login resp: code=${loginRes?.code} msg=${JSON.stringify(loginRes?.msg)} sliderX=${sliderX} dataKeys=${loginRes?.data ? Object.keys(loginRes.data).join(',') : 'none'}`);
 
     if (!loginRes || loginRes.code !== 0 || !loginRes.data) {
       return { ok: false, msg: 'Login failed: ' + (loginRes?.msg || 'code=' + loginRes?.code) };
