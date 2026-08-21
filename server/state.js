@@ -96,6 +96,15 @@ class Account {
        instead of always retrying at the locked-in max-level stake. */
     this.manualStakeOverride = null;
 
+    /* One-shot DIRECTION override for the manual recovery bet — set by
+       manualBet(amount, side). A manual bet is defined by the admin's own
+       BIG/SMALL choice, not the auto-formula's prediction; this is what
+       makes it actually "manual". Consumed (and cleared) in engineStep()
+       the moment the next real prediction is generated — see the
+       manualPredOverride handling there for why start()'s own prediction
+       call is NOT where this gets applied. */
+    this.manualPredOverride = null;
+
     this.predState = {};
   }
 
@@ -192,6 +201,7 @@ class Account {
     this.watchLossCount = 0; this.lastPredIssue = null; this.prediction = null;
     this.maxLossActive = false;   // "Reset" also dismisses the manual-bet recovery panel
     this.manualStakeOverride = null;
+    this.manualPredOverride = null;
   }
 
   /* Reset only engine-internal state — keeps cumulative stats intact.

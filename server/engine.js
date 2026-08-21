@@ -281,8 +281,20 @@ class AccountEngine {
      manualBet() so a recovery click always places an actual bet. Without
      this, an account with Watch Mode on would resume into WATCHING and
      sit there tracking virtual results, never placing the real bet the
-     admin just asked for — confirmed bug, this is the fix. */
-  async start(preserveLevel = false, forceReal = false) {
+     admin just asked for — confirmed bug, this is the fix.
+     immediate: skip the "prime a prediction for the currently-open period
+     just to mark it handled" step below. Normal starts deliberately do
+     that priming — it sets lastPredIssue to the CURRENT period so the
+     tick loop treats it as already-seen and waits for the NEXT period,
+     which is fine for a routine Start click. For manualBet() it's wrong:
+     the admin clicked because they want a bet placed NOW, and if there's
+     still time left in the currently-open period, it should fire there
+     — not silently wait out an entire extra period. With lastPredIssue
+     left null, engineStep()'s very first tick treats the open period as
+     new and proceeds straight to attemptBet(), which still correctly
+     defers to the next period on its own if too little time is left
+     (the existing safety-margin check, untouched). */
+  async start(preserveLevel = false, forceReal = false, immediate = false) {
     if (this.acct.isRunning()) return;
 
     this.acct.resetEngineState(preserveLevel);
@@ -311,20 +323,24 @@ class AccountEngine {
     await this.fetchDrawHistory(true);
     await this.fetchBalance();
 
-    /* Generate first prediction (SHARED — identical for every account on this
-       gameMode+formula; staking stays per-account). */
-    const pred = predict.runShared(this.acct.histBuf, this.acct.formula, this.acct.gameMode);
-    this.acct.prediction = pred;
-    /* Set lastPredIssue here so engineStep() doesn't re-run predict for the same period */
-    if (pred.forIssue) this.acct.lastPredIssue = pred.forIssue;
-    if (pred.pred !== 'WAIT') {
-      this.log(`🔮 ${info.name}: ${pred.pred} for ...${pred.forIssue.slice(-5)} — ${pred.log}`, 'l-info');
-      this.acct.addPredHistory({
-        forIssue: pred.forIssue,
-        pred: pred.pred.toUpperCase(),
-        formula: pred.formula || this.acct.formula,
-        time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }),
-      });
+    if (!immediate) {
+      /* Generate first prediction (SHARED — identical for every account on this
+         gameMode+formula; staking stays per-account). */
+      const pred = predict.runShared(this.acct.histBuf, this.acct.formula, this.acct.gameMode);
+      this.acct.prediction = pred;
+      /* Set lastPredIssue here so engineStep() doesn't re-run predict for the same period */
+      if (pred.forIssue) this.acct.lastPredIssue = pred.forIssue;
+      if (pred.pred !== 'WAIT') {
+        this.log(`🔮 ${info.name}: ${pred.pred} for ...${pred.forIssue.slice(-5)} — ${pred.log}`, 'l-info');
+        this.acct.addPredHistory({
+          forIssue: pred.forIssue,
+          pred: pred.pred.toUpperCase(),
+          formula: pred.formula || this.acct.formula,
+          time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }),
+        });
+      }
+    } else {
+      this._trace(`start() immediate=true — skipping the priming prediction, lastPredIssue stays null so engineStep()'s first tick treats the currently-open period as new`);
     }
 
     this.broadcast();
@@ -380,12 +396,29 @@ class AccountEngine {
      A win resets to LV1 and the engine keeps running (normal autobet
      continues); a loss re-trips the breaker immediately (nextLv >
      maxLevel again) and re-stops with maxLossActive set, so another
-     manual click is needed — it never silently keeps firing on its own. */
-  async manualBet(customAmount) {
+     manual click is needed — it never silently keeps firing on its own.
+
+     side: REQUIRED — 'Big' or 'Small' (case-insensitive), the admin's own
+     choice. This is the actual point of a "manual" bet: it does NOT use
+     the auto-formula's prediction for direction, only ever its own stake
+     ladder for the number. Without a valid side this is refused outright
+     — silently falling back to the auto prediction would defeat the
+     entire feature (that was the bug: a "manual" bet that only let you
+     override the amount, never the side). See manualPredOverride in
+     state.js and its consumption point in engineStep(). */
+  async manualBet(customAmount, side) {
     this._manualBetTrace = true;   // verbose tracing until this bet resolves — see _trace()
-    this._trace(`manualBet(${customAmount}) called — maxLossActive=${this.acct.maxLossActive} isRunning=${this.acct.isRunning()} watchEnabled=${this.acct.watchEnabled}`);
+    const normSide = String(side || '').trim().toLowerCase();
+    const chosenSide = normSide === 'big' ? 'Big' : normSide === 'small' ? 'Small' : null;
+    this._trace(`manualBet(${customAmount}, ${side}) called — maxLossActive=${this.acct.maxLossActive} isRunning=${this.acct.isRunning()} watchEnabled=${this.acct.watchEnabled} chosenSide=${chosenSide}`);
     if (!this.acct.maxLossActive || this.acct.isRunning()) {
       this._trace(`manualBet() REJECTED — nothing to recover from (maxLossActive=${this.acct.maxLossActive}) or already running (isRunning=${this.acct.isRunning()})`);
+      this._manualBetTrace = false;
+      return false;
+    }
+    if (!chosenSide) {
+      this.log(`🎯 Manual bet REJECTED — no BIG/SMALL choice provided`, 'l-err');
+      this._trace(`manualBet() REJECTED — side must be 'Big' or 'Small', got: ${JSON.stringify(side)}`);
       this._manualBetTrace = false;
       return false;
     }
@@ -394,11 +427,12 @@ class AccountEngine {
     if (Number.isFinite(amt) && amt > 0) {
       this.acct.manualStakeOverride = Math.floor(amt);
     }
+    this.acct.manualPredOverride = chosenSide;
     const stakeForLog = this.acct.manualStakeOverride ?? this.acct.getStake();
 
-    this.log(`🎯 Manual recovery bet — resuming at LV${this.acct.level} (₹${stakeForLog})`, 'l-info');
-    this.toast('Manual Bet', `Retrying at LV${this.acct.level} · ₹${stakeForLog}`, 'info');
-    await this.start(true, true);   // preserveLevel + forceReal — same level, never Watch Mode
+    this.log(`🎯 Manual recovery bet — ${chosenSide} at LV${this.acct.level} (₹${stakeForLog})`, 'l-info');
+    this.toast('Manual Bet', `${chosenSide} · LV${this.acct.level} · ₹${stakeForLog}`, 'info');
+    await this.start(true, true, true);   // preserveLevel + forceReal + immediate — same level, never Watch Mode, fire on the currently-open period if there's time
     return true;
   }
 
@@ -408,6 +442,26 @@ class AccountEngine {
      every 500ms don't get buried in log noise. */
   _trace(msg) {
     if (this._manualBetTrace) console.log(`[TRACE:${this.acct.id}] ${msg}`);
+  }
+
+  /* ═══ CANCEL MANUAL BET ═══
+     Dismisses the recovery prompt without placing anything — the admin
+     decided not to bet. Does NOT touch level/wins/losses/pnl (that's what
+     the separate "Reset Stats" button is for); it only clears the flags
+     that got the account into "awaiting manual bet" in the first place,
+     so the engine just sits stopped normally, same as if it had never
+     had a manual-bet option at all. The engine is guaranteed not running
+     here (that's the only way maxLossActive is ever true), so there's
+     nothing to stop(). */
+  cancelManualBet() {
+    if (!this.acct.maxLossActive) return false;
+    this.log(`❌ Manual bet cancelled — recovery dismissed`, 'l-info');
+    this.toast('Manual Bet Cancelled', 'Dismissed — engine stays stopped', 'info');
+    this.acct.maxLossActive = false;
+    this.acct.manualStakeOverride = null;
+    this.acct.manualPredOverride = null;
+    this.broadcast();
+    return true;
   }
 
   /* ═══ ENGINE STEP (runs every 500ms) ═══ */
@@ -519,9 +573,24 @@ class AccountEngine {
       this._trace(`tick #${this._tickCount}: NEW PERIOD — nextIssue=${nextIssue} !== lastPredIssue=${this.acct.lastPredIssue} — generating prediction`);
 
       /* Generate prediction — only once per new period (SHARED across accounts) */
-      const pred = predict.runShared(histBuf, this.acct.formula, this.acct.gameMode);
-      this.acct.prediction = pred;
+      let pred = predict.runShared(histBuf, this.acct.formula, this.acct.gameMode);
       this._trace(`prediction: pred=${pred.pred} forIssue=${pred.forIssue} formula=${pred.formula} noRecovery=${!!pred.noRecovery} log="${pred.log}"`);
+
+      /* Manual bet direction override — consumed HERE, not in start(). start()'s
+         own runShared() call never reaches attemptBet() (it only sets
+         lastPredIssue so the tick loop knows this period is already "handled"
+         and waits for the NEXT one); THIS call is the one whose result actually
+         gets bet. A copy is made rather than mutating `pred` in place because
+         runShared() returns the SAME cached object to every other account on
+         this gameMode+formula — overwriting it in place would silently corrupt
+         everyone else's prediction for this period. */
+      if (this.acct.manualPredOverride) {
+        const chosen = this.acct.manualPredOverride;
+        this._trace(`prediction OVERRIDDEN by manual bet choice: auto said ${pred.pred}, admin chose ${chosen}`);
+        pred = { ...pred, pred: chosen, log: `MANUAL — admin selected ${chosen} (auto formula said ${pred.pred})`, manual: true };
+        this.acct.manualPredOverride = null;
+      }
+      this.acct.prediction = pred;
 
       /* Record prediction in history */
       if (pred && pred.pred !== 'WAIT' && pred.forIssue) {

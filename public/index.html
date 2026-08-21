@@ -225,16 +225,25 @@
     </div>
   </div>
 
-  <!-- MANUAL RECOVERY BET POPUP (DEFAULT_KEY only — opened/closed by renderState
-       via s.maxLossActive, never dismissed by hand: it reflects real engine
-       state, not a UI preference) -->
+  <!-- MANUAL RECOVERY BET POPUP (DEFAULT_KEY only — opened by renderState
+       via s.maxLossActive, which reflects real engine state, not a UI
+       preference. The close button is the one way to dismiss it by hand —
+       it explicitly cancels the recovery via cancelManualBet, it doesn't
+       just hide the popup. ) -->
   <div class="kp-manualbet-modal" id="abManualBetModal">
     <div class="kp-manualbet-box">
-      <div class="kp-manualbet-head">🎯 Manual Recovery Bet</div>
-      <div class="kp-manualbet-msg" id="abManualBetModalMsg">All levels exhausted — place a manual bet to recover.</div>
+      <div class="kp-manualbet-head-row">
+        <div class="kp-manualbet-head">🎯 Manual Recovery Bet</div>
+        <button class="kp-manualbet-close" id="abManualBetClose" title="Cancel manual bet">✕</button>
+      </div>
+      <div class="kp-manualbet-msg" id="abManualBetModalMsg">All levels exhausted — pick a side and place a manual bet to recover.</div>
+      <div class="kp-manual-side-row">
+        <button class="kp-btn-side kp-btn-side-big" id="abManualBetBig" data-side="Big">BIG</button>
+        <button class="kp-btn-side kp-btn-side-small" id="abManualBetSmall" data-side="Small">SMALL</button>
+      </div>
       <div class="kp-manual-row">
         <input type="number" id="abManualBetAmt" class="kp-manual-amt" min="1" step="1" placeholder="Amount" />
-        <button class="kp-btn-manual" id="abBtnManualBet">PLACE BET</button>
+        <button class="kp-btn-manual" id="abBtnManualBet" disabled>PLACE BET</button>
       </div>
     </div>
   </div>
@@ -973,6 +982,18 @@
           if (!_manualBetShown) {
             $('abManualBetAmt').value = s.stake;
             _manualBetShown = true;
+            /* Fresh prompt each time (including a re-trip after a losing
+               manual bet) — never carry a stale choice from a PREVIOUS
+               attempt forward. Defaults to BIG: it's the visually-first
+               option and its border color already reads as "selected" at
+               a glance, so leaving the button disabled until a redundant
+               re-click was a real mismatch, not just a cosmetic one — the
+               admin still sees the choice and can switch to SMALL before
+               confirming, same as any other pre-filled default. */
+            _manualBetSide = 'Big';
+            $('abManualBetBig').classList.add('selected');
+            $('abManualBetSmall').classList.remove('selected');
+            $('abBtnManualBet').disabled = false;
           }
         }
       } else {
@@ -1671,13 +1692,28 @@
 
   // Manual Recovery Bet (DEFAULT_KEY only — server re-checks this, the
   // popup is just never opened client-side for everyone else in renderState)
+
+  // Side selection — a manual bet IS the admin's own BIG/SMALL choice, not
+  // the auto-formula's prediction, so PLACE BET stays disabled until one is
+  // picked. _manualBetSide is reset whenever the popup opens/closes (renderState).
+  var _manualBetSide = null;
+  function selectManualSide(side) {
+    _manualBetSide = side;
+    $('abManualBetBig').classList.toggle('selected', side === 'Big');
+    $('abManualBetSmall').classList.toggle('selected', side === 'Small');
+    $('abBtnManualBet').disabled = false;
+  }
+  $('abManualBetBig').addEventListener('click', function(){ selectManualSide('Big'); });
+  $('abManualBetSmall').addEventListener('click', function(){ selectManualSide('Small'); });
+
   $('abBtnManualBet').addEventListener('click', function(e){
     if (!socket || !currentView) return;
+    if (!_manualBetSide) { toast('Manual Bet', 'Pick BIG or SMALL first', 'error'); return; }
     var amt = parseInt($('abManualBetAmt').value, 10);
     if (!amt || amt < 1) { toast('Manual Bet', 'Enter a valid amount', 'error'); return; }
     e.target.disabled = true;
     window._kpStopSent = false; // this resumes the engine, same as Start
-    socket.emit('manualBet', { amount: amt }); // targets server's viewingId
+    socket.emit('manualBet', { amount: amt, side: _manualBetSide }); // targets server's viewingId
     /* Close right away — the bet is submitted, and abBetStatus (driven by
        the same 'betStatus' events a normal autobet round fires) takes over
        showing PREPARING → BETTING → result, identical to normal autobet.
@@ -1685,6 +1721,14 @@
        automatically (renderState); a win just keeps autobet running. */
     $('abManualBetModal').classList.remove('open');
     setTimeout(function(){ e.target.disabled = false; }, 2000); // guard against double-click
+  });
+
+  // Cancel Manual Bet — confirms first since this abandons the recovery
+  // attempt entirely (engine just stays stopped, no bet placed).
+  $('abManualBetClose').addEventListener('click', function(){
+    if (!confirm('Are you sure you want to close and reset the manual bet?')) return;
+    if (socket && currentView) socket.emit('cancelManualBet', {}); // targets server's viewingId
+    $('abManualBetModal').classList.remove('open');
   });
 
   // Reset Stats

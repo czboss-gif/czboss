@@ -377,8 +377,38 @@ io.on('connection', (socket) => {
     }
     if (!acct.maxLossActive) return; // nothing to recover from — ignore stray clicks
 
-    console.log(`[IO] Manual recovery bet: ${id}${data?.amount ? ` amount=₹${data.amount}` : ''}`);
-    await engines.get(id)?.manualBet(data?.amount);
+    console.log(`[IO] Manual recovery bet: ${id} side=${data?.side}${data?.amount ? ` amount=₹${data.amount}` : ''}`);
+    await engines.get(id)?.manualBet(data?.amount, data?.side);
+    io.emit('accountList', state.listAccounts());
+  });
+
+  /* ── Cancel Manual Bet — DEFAULT_KEY only ──
+     Dismisses the recovery popup without placing anything. Same gate as
+     manualBet — it's part of the same admin-only feature, and while it's
+     not itself a money-moving action, only the session that's allowed to
+     start the recovery should be allowed to call it off. */
+  socket.on('cancelManualBet', async (data) => {
+    const id = targetId(data);
+    if (!id) return;
+    const acct = state.getAccount(id);
+    if (!acct) return;
+    const { platform, phone } = acct;
+
+    if (!authed(socket)) { socket.emit('authError', { phone, msg: 'Not authenticated' }); return; }
+    if (!socket.data.authDefault) {
+      console.warn(`[GATE] cancelManualBet REJECTED ${id} — not a DEFAULT_KEY session`);
+      socket.emit('authError', { phone, platform, msg: 'Manual bet requires the default key' });
+      return;
+    }
+    const gate = await gateCheck(socket.data.authKey, phone, platform);
+    if (!gate.ok) {
+      console.warn(`[GATE] cancelManualBet REJECTED ${id} — ${gate.msg}`);
+      socket.emit('authError', { phone, platform, msg: gate.msg });
+      return;
+    }
+
+    console.log(`[IO] Manual bet cancelled: ${id}`);
+    engines.get(id)?.cancelManualBet();
     io.emit('accountList', state.listAccounts());
   });
 
