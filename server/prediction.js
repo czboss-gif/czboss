@@ -1549,7 +1549,71 @@ function n1AutoPredict(histBuf, predState) {
   return { pred, log: `${top} → ${pred}`, noRecovery: true };
 }
 
-const MAP = { dna3, oracle: oracleEngine, patdb_v4: patdbV4, titan_v3: titanV3, cobra_strike: cobraStrike, itachi: itachiPredict, kubera: kuberaPredict, hacksoon: hacksoonPredict, kaala: kaalaPredict, n1n2: n1n2Predict, zigzag: zigzagPredict, zn1p: zn1pPredict, eip: eipPredict, kutty: kuttyPredict, kingpin3: kingpin3Predict, engine11: engine11Predict, kingpin1m, aaab_corrector: aaabCorrectorPredict, n1_auto: n1AutoPredict };
+/* ═══ N1 ABAB ZIGZAG — ported verbatim from "N1 ABAB Zigzag (1).html" ═══
+   Its getPredictionData(), in priority order (bsHistory[0] = newest):
+   1. AABABAB (7 records, oldest→newest = A,A,B,A,B,A,B) → flip of the most
+      recent result ("continue the zigzag").
+   2. AABABA (6 records, oldest→newest = A,A,B,A,B,A) → backtest: search
+      history for the SAME 6-length pattern repeating; predict the OPPOSITE
+      of whatever result immediately followed that earlier occurrence. Falls
+      through to step 3 if the pattern matches but no repeat is found in
+      history (source: "Not found in past history for backtest. Reverting
+      to LDN.").
+   3. Default — follow the Last Drawn Number's Big/Small (LDN) exactly.
+   Stateless: purely a function of histBuf, nothing carried in predState,
+   matching the source (which only reads its rolling historyBuffer). ═══ */
+function n1AbabZigzagPredict(histBuf) {
+  if (!histBuf || histBuf.length < 1) return { pred: 'WAIT', log: 'Gathering records...' };
+
+  const bsHistory = histBuf.map(h => (h.number >= 5 ? 'BIG' : 'SMALL')); // [0] = newest
+  const ldnBS  = bsHistory[0];
+  const ldnNum = histBuf[0].number;
+
+  /* 1. AABABAB — indices 6..0 oldest→newest */
+  if (bsHistory.length >= 7) {
+    const A = bsHistory[6], B = bsHistory[4];
+    if (A !== B &&
+        bsHistory[5] === A && bsHistory[3] === A &&
+        bsHistory[2] === B && bsHistory[1] === A &&
+        bsHistory[0] === B) {
+      const flipBS = bsHistory[0] === 'BIG' ? 'SMALL' : 'BIG';
+      const pred = flipBS === 'BIG' ? 'Big' : 'Small';
+      return { pred, log: `AABABAB detected — flip of last(${bsHistory[0]}) → ${pred}` };
+    }
+  }
+
+  /* 2. AABABA — indices 5..0 oldest→newest, then backtest for a repeat */
+  if (bsHistory.length >= 6) {
+    const A = bsHistory[5], B = bsHistory[3];
+    if (A !== B &&
+        bsHistory[4] === A && bsHistory[2] === A &&
+        bsHistory[1] === B && bsHistory[0] === A) {
+      const targetPattern = bsHistory.slice(0, 6);
+      let foundIndex = -1;
+      for (let i = 1; i <= bsHistory.length - 6; i++) {
+        let match = true;
+        for (let j = 0; j < 6; j++) {
+          if (bsHistory[i + j] !== targetPattern[j]) { match = false; break; }
+        }
+        if (match) { foundIndex = i; break; }
+      }
+      if (foundIndex !== -1) {
+        const nextPastResult = bsHistory[foundIndex - 1];
+        const flipBS = nextPastResult === 'BIG' ? 'SMALL' : 'BIG';
+        const pred = flipBS === 'BIG' ? 'Big' : 'Small';
+        const atIssue = histBuf[foundIndex] ? String(histBuf[foundIndex].issueNumber).slice(-5) : '?';
+        return { pred, log: `AABABA backtested @...${atIssue} — opposite of ${nextPastResult} → ${pred}` };
+      }
+      /* Pattern matched but never repeated in history — source falls through to LDN. */
+    }
+  }
+
+  /* 3. Default — follow the Last Drawn Number */
+  const pred = ldnBS === 'BIG' ? 'Big' : 'Small';
+  return { pred, log: `Default LDN(${ldnNum}) → ${pred}` };
+}
+
+const MAP = { dna3, oracle: oracleEngine, patdb_v4: patdbV4, titan_v3: titanV3, cobra_strike: cobraStrike, itachi: itachiPredict, kubera: kuberaPredict, hacksoon: hacksoonPredict, kaala: kaalaPredict, n1n2: n1n2Predict, zigzag: zigzagPredict, zn1p: zn1pPredict, eip: eipPredict, kutty: kuttyPredict, kingpin3: kingpin3Predict, engine11: engine11Predict, kingpin1m, aaab_corrector: aaabCorrectorPredict, n1_auto: n1AutoPredict, n1_abab_zigzag: n1AbabZigzagPredict };
 
 const _STATEFUL = new Set(['oracle', 'titan_v3', 'kaala', 'n1n2', 'zigzag', 'zn1p', 'kutty', 'engine11', 'n1_auto']);
 

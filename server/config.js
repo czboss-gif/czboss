@@ -72,6 +72,7 @@ const KP = {
     engine11:     { name: '🔱 Matrix 11',    desc: '11-formula ensemble majority vote: Mfreq + Pol + EIP + pattern detectors + RAG + N1/N2 — 2 stateful flip engines', tags: ['Matrix11', 'Ensemble', '11-Vote'] },
     aaab_corrector:{ name: '🔁 AAAB Corrector', desc: 'Fixed S-S-S-B sequence on (period % 4) + Auto-Corrector: WAITs when the last up-to-4 rounds show ZERO sequence matches (pattern inverted)', tags: ['AAAB', 'Sequence', 'Auto-Correct'] },
     n1_auto:      { name: '📋 N1 1Auto',      desc: 'Copy-Cat: predict the last settled result. After any loss, skips exactly one round (WAIT), then resumes', tags: ['N1', 'Copy-Cat', 'Skip-on-Loss'] },
+    n1_abab_zigzag:{ name: '🧬 N1 ABAB ZigZag', desc: 'AABABAB(7)→flip last · AABABA(6)→backtest opposite of repeat · else follow LDN (Last Drawn Number)', tags: ['ABAB', 'ZigZag', 'LDN', 'Backtest'] },
 
     /* ── 1-MINUTE formulas (mode: WinGo_1M) ── */
     kingpin1m:    { name: '👑 KINGPIN 1M',   desc: 'WinGo 1-Minute engine: Streak Follower (last 3 same → continue) → else Majority Reversal (bet opposite of last-5 majority). Warms up after 5 rounds.', tags: ['KINGPIN', '1-MIN', 'Streak+Majority'], mode: 'WinGo_1M' },
