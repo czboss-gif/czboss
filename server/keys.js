@@ -8,6 +8,7 @@ const crypto    = require('crypto');
 const AccessKey = require('./models/AccessKey');
 const KeySession = require('./models/KeySession');
 const UserConfig = require('./models/UserConfig');
+const platforms = require('./platforms');
 
 const DEFAULT_KEY = (process.env.DEFAULT_KEY || '').trim().toUpperCase();
 
@@ -52,10 +53,10 @@ async function seedDefaultKey() {
    Mount all key routes
    ───────────────────────────────────────────────────────── */
 function mount(app, requireAdmin, onRevoke) {
-  /* onRevoke(phone) — optional callback fired when a key is disabled or deleted,
-     so the caller can immediately STOP the bound account's running engine
-     (revocation takes effect live, not just at the next bet-start). */
-  const revoke = (phone) => { try { if (phone && typeof onRevoke === 'function') onRevoke(phone); } catch (e) { console.error('[KEYS] onRevoke error:', e.message); } };
+  /* onRevoke(platform, phone) — optional callback fired when a key is disabled
+     or deleted, so the caller can immediately STOP the bound account's running
+     engine (revocation takes effect live, not just at the next bet-start). */
+  const revoke = (platform, phone) => { try { if (phone && typeof onRevoke === 'function') onRevoke(platform, phone); } catch (e) { console.error('[KEYS] onRevoke error:', e.message); } };
 
   /* ══════════════════════════════════════════
      PUBLIC — called from browser (no admin)
@@ -72,7 +73,7 @@ function mount(app, requireAdmin, onRevoke) {
       const record = await AccessKey.findOne({ key });
       if (!record)         return res.json({ ok: false, msg: 'Invalid key' });
       if (!record.enabled) return res.json({ ok: false, msg: 'Key is disabled' });
-      return res.json({ ok: true, isDefault: record.isDefault, boundPhone: record.boundPhone || null });
+      return res.json({ ok: true, isDefault: record.isDefault, boundPhone: record.boundPhone || null, boundPlatform: record.boundPlatform || null });
     } catch (e) {
       console.error('[KEYS] check error:', e.message);
       return res.status(500).json({ ok: false, msg: 'Server error' });
@@ -80,16 +81,17 @@ function mount(app, requireAdmin, onRevoke) {
   });
 
   /* POST /api/keys/validate
-     Body: { key, phone }
-     Called BEFORE GOA captcha/login to check:
+     Body: { key, phone, platform }
+     Called BEFORE captcha/login to check:
        - key exists
        - key is enabled
-       - phone binding: if bound → must match; if not bound → allow
-       - default key → always allow any phone
+       - binding: if bound → phone AND platform must match; if not bound → allow
+       - default key → always allow any phone/platform
      Returns: { ok, isDefault, sessionId? }                    */
   app.post('/api/keys/validate', async (req, res) => {
-    const key   = normaliseKey(req.body?.key);
-    const phone = (req.body?.phone || '').trim();
+    const key      = normaliseKey(req.body?.key);
+    const phone    = (req.body?.phone || '').trim();
+    const platform = platforms.resolve(req.body?.platform);
 
     if (!key)   return res.json({ ok: false, msg: 'Key is required' });
     if (!phone) return res.json({ ok: false, msg: 'Phone is required' });
@@ -99,14 +101,17 @@ function mount(app, requireAdmin, onRevoke) {
       if (!record)         return res.json({ ok: false, msg: 'Invalid key' });
       if (!record.enabled) return res.json({ ok: false, msg: 'Key is disabled' });
 
-      /* Default key: super user, skip phone binding */
+      /* Default key: super user, skip binding entirely */
       if (record.isDefault) {
         return res.json({ ok: true, isDefault: true });
       }
 
-      /* Non-default: check phone binding */
+      /* Non-default: check phone + platform binding */
       if (record.boundPhone && record.boundPhone !== phone) {
         return res.json({ ok: false, msg: 'This key is registered to a different number' });
+      }
+      if (record.boundPlatform && record.boundPlatform !== platform) {
+        return res.json({ ok: false, msg: `This key is registered to ${platforms.get(record.boundPlatform).name}` });
       }
 
       return res.json({ ok: true, isDefault: false, bound: !!record.boundPhone });
@@ -118,10 +123,11 @@ function mount(app, requireAdmin, onRevoke) {
 
   /* POST /api/keys/login-check — hard server gate, verbose debug */
   app.post('/api/keys/login-check', async (req, res) => {
-    const key   = normaliseKey(req.body?.key);
-    const phone = (req.body?.phone || '').trim().replace(/[^0-9]/g, '');
+    const key      = normaliseKey(req.body?.key);
+    const phone    = (req.body?.phone || '').trim().replace(/[^0-9]/g, '');
+    const platform = platforms.resolve(req.body?.platform);
 
-    console.log(`[LOGIN-CHECK] key=${key} phone=${phone}`);
+    console.log(`[LOGIN-CHECK] key=${key} phone=${phone} platform=${platform}`);
 
     if (!key || !phone) {
       console.log(`[LOGIN-CHECK] REJECTED — missing key or phone`);
@@ -130,7 +136,7 @@ function mount(app, requireAdmin, onRevoke) {
 
     try {
       const record = await AccessKey.findOne({ key });
-      console.log(`[LOGIN-CHECK] DB record=`, record ? { key: record.key, boundPhone: record.boundPhone, enabled: record.enabled, isDefault: record.isDefault } : 'NOT FOUND');
+      console.log(`[LOGIN-CHECK] DB record=`, record ? { key: record.key, boundPhone: record.boundPhone, boundPlatform: record.boundPlatform, enabled: record.enabled, isDefault: record.isDefault } : 'NOT FOUND');
 
       if (!record) return res.status(403).json({ ok: false, msg: 'Invalid key' });
       if (!record.enabled) return res.status(403).json({ ok: false, msg: 'Key is disabled' });
@@ -148,6 +154,10 @@ function mount(app, requireAdmin, onRevoke) {
           console.warn(`[LOGIN-CHECK] BLOCKED — phone mismatch`);
           return res.status(403).json({ ok: false, msg: 'This key is registered to a different number' });
         }
+        if (record.boundPlatform && record.boundPlatform !== platform) {
+          console.warn(`[LOGIN-CHECK] BLOCKED — platform mismatch (bound=${record.boundPlatform} attempted=${platform})`);
+          return res.status(403).json({ ok: false, msg: `This key is registered to ${platforms.get(record.boundPlatform).name}` });
+        }
       } else {
         console.log(`[LOGIN-CHECK] ALLOWED — key not yet bound, first login`);
       }
@@ -161,14 +171,15 @@ function mount(app, requireAdmin, onRevoke) {
   });
 
   /* POST /api/keys/bind
-     Body: { key, phone, balance, sessionId }
-     Called AFTER successful GOA login.
-       - If not default and phone not yet bound → save binding
+     Body: { key, phone, platform, balance, sessionId }
+     Called AFTER successful platform login.
+       - If not default and phone/platform not yet bound → save binding
        - Creates a new KeySession row
      Returns: { ok, sessionId }                                 */
   app.post('/api/keys/bind', async (req, res) => {
     const key       = normaliseKey(req.body?.key);
     const phone     = (req.body?.phone || '').trim();
+    const platform  = platforms.resolve(req.body?.platform);
     const balance   = parseFloat(req.body?.balance) || 0;
     const sessionId = req.body?.sessionId || crypto.randomUUID();
 
@@ -178,16 +189,17 @@ function mount(app, requireAdmin, onRevoke) {
       const record = await AccessKey.findOne({ key });
       if (!record || !record.enabled) return res.json({ ok: false, msg: 'Invalid or disabled key' });
 
-      /* Bind phone on first login (non-default keys only) */
+      /* Bind phone + platform together on first login (non-default keys only) */
       if (!record.isDefault && !record.boundPhone) {
-        record.boundPhone = phone;
+        record.boundPhone    = phone;
+        record.boundPlatform = platform;
         await record.save();
-        console.log(`[KEYS] Bound key ${key.slice(0,5)}… to phone ${phone}`);
+        console.log(`[KEYS] Bound key ${key.slice(0,5)}… to ${platform}:${phone}`);
       }
 
       /* Create session row */
-      await KeySession.create({ sessionId, key, phone, balanceAtLogin: balance });
-      console.log(`[KEYS] Session created: ${sessionId} key=${key.slice(0,5)}… phone=${phone}`);
+      await KeySession.create({ sessionId, key, phone, platform, balanceAtLogin: balance });
+      console.log(`[KEYS] Session created: ${sessionId} key=${key.slice(0,5)}… ${platform}:${phone}`);
 
       return res.json({ ok: true, sessionId });
     } catch (e) {
@@ -273,23 +285,26 @@ function mount(app, requireAdmin, onRevoke) {
       const statsMap = {};
       stats.forEach(s => { statsMap[s._id] = s; });
 
-      /* Plain-text password per bound phone (for the admin copy button). */
-      const cfgs = await UserConfig.find({}, { phone: 1, pwdPlain: 1, _id: 0 }).lean();
+      /* Plain-text password per bound account (for the admin copy button),
+         keyed by "platform:phone" — the same phone can differ per platform. */
+      const cfgs = await UserConfig.find({}, { platform: 1, phone: 1, pwdPlain: 1, _id: 0 }).lean();
       const pwdMap = {};
-      cfgs.forEach(c => { if (c.phone) pwdMap[c.phone] = c.pwdPlain || ''; });
+      cfgs.forEach(c => { if (c.phone) pwdMap[`${c.platform || 'goa'}:${c.phone}`] = c.pwdPlain || ''; });
 
       const result = keys.map(k => ({
-        _id:         k._id,
-        key:         k.key,
-        label:       k.label,
-        enabled:     k.enabled,
-        boundPhone:  k.boundPhone,
-        isDefault:   k.isDefault,
-        createdAt:   k.createdAt,
-        pwd:         k.boundPhone ? (pwdMap[k.boundPhone] || '') : '',
-        sessions:    statsMap[k.key]?.sessions    || 0,
-        totalProfit: statsMap[k.key]?.totalProfit || 0,
-        lastSeen:    statsMap[k.key]?.lastSeen    || null,
+        _id:            k._id,
+        key:            k.key,
+        label:          k.label,
+        enabled:        k.enabled,
+        boundPhone:     k.boundPhone,
+        boundPlatform:  k.boundPlatform,
+        platformName:   k.boundPlatform ? platforms.get(k.boundPlatform).name : null,
+        isDefault:      k.isDefault,
+        createdAt:      k.createdAt,
+        pwd:            k.boundPhone ? (pwdMap[`${k.boundPlatform || 'goa'}:${k.boundPhone}`] || '') : '',
+        sessions:       statsMap[k.key]?.sessions    || 0,
+        totalProfit:    statsMap[k.key]?.totalProfit || 0,
+        lastSeen:       statsMap[k.key]?.lastSeen    || null,
       }));
 
       res.json(result);
@@ -331,7 +346,7 @@ function mount(app, requireAdmin, onRevoke) {
       doc.enabled = !doc.enabled;
       await doc.save();
       /* Disabling a key → stop its bound account's engine right away. */
-      if (!doc.enabled && doc.boundPhone) revoke(doc.boundPhone);
+      if (!doc.enabled && doc.boundPhone) revoke(doc.boundPlatform, doc.boundPhone);
       res.json(doc);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -344,10 +359,10 @@ function mount(app, requireAdmin, onRevoke) {
       const doc = await AccessKey.findById(req.params.id);
       if (!doc) return res.status(404).json({ error: 'Key not found' });
       if (doc.isDefault) return res.status(403).json({ error: 'Default key cannot be deleted' });
-      const revokedPhone = doc.boundPhone;
+      const revokedPhone = doc.boundPhone, revokedPlatform = doc.boundPlatform;
       await AccessKey.deleteOne({ _id: req.params.id });
       /* Deleting a key → stop its bound account's engine right away. */
-      if (revokedPhone) revoke(revokedPhone);
+      if (revokedPhone) revoke(revokedPlatform, revokedPhone);
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });

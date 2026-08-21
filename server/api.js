@@ -6,11 +6,15 @@
 
 const proxy = require('./proxy');
 const KP    = require('./config');
+const platforms = require('./platforms');
 
-const HEADERS = {
-  'Origin':  'https://goagames.social',
-  'Referer': 'https://goagames.social/',
-};
+/* Origin/Referer for the shared game backend, matched to the account's
+   own platform. The game host (api.ar-lottery01.com) is the same for
+   everyone, but the Origin should still reflect which site the session
+   actually logged in through. */
+function headersFor(acct) {
+  return platforms.headers(acct?.platform);
+}
 
 /** Handle token rotation from response — updates account directly */
 function rotateToken(acct, result) {
@@ -35,7 +39,7 @@ async function getBalance(acct) {
 
   try {
     const result = await proxy.httpGet(url, {
-      ...HEADERS,
+      ...headersFor(acct),
       'Authorization': `Bearer ${token}`,
     });
     rotateToken(acct, result);
@@ -62,7 +66,7 @@ async function placeBet(acct, issueNumber, betAmount, betContent) {
 
   try {
     const result = await proxy.httpPost(`${proxy.GOA_API}/api/Lottery/WinGoBet`, body, {
-      ...HEADERS,
+      ...headersFor(acct),
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     });
@@ -111,7 +115,7 @@ async function getDeepHistory(acct, total = 160) {
       const url = `${proxy.GOA_API}/api/Lottery/GetHistoryIssuePage?${qs}`;
 
       const res = await proxy.httpGet(url, {
-        ...HEADERS,
+        ...headersFor(acct),
         'Authorization': `Bearer ${token}`,
       });
       rotateToken(acct, res);
@@ -157,7 +161,7 @@ async function getBetRecord(acct, page = 1, pageSize = 10) {
   const url = `${proxy.GOA_API}/api/Lottery/GetRecordPage?${qs}`;
 
   const result = await proxy.httpGet(url, {
-    ...HEADERS,
+    ...headersFor(acct),
     'Authorization': `Bearer ${token}`,
   });
   rotateToken(acct, result);
@@ -179,7 +183,7 @@ async function getRecordPage(acct, pageNo = 1, pageSize = 10) {
   const url = `${proxy.GOA_API}/api/Lottery/GetRecordPage?${qs}`;
 
   const result = await proxy.httpGet(url, {
-    ...HEADERS,
+    ...headersFor(acct),
     'Authorization': `Bearer ${token}`,
   });
   rotateToken(acct, result);

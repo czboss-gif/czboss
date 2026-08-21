@@ -22,6 +22,12 @@ const keySessionSchema = new mongoose.Schema({
     required: true,
     trim:     true,
   },
+  platform: {
+    type:    String,
+    default: 'goa',
+    trim:    true,
+    lowercase: true,
+  },
   balanceAtLogin: {
     type:    Number,
     default: 0,

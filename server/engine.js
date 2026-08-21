@@ -102,18 +102,33 @@ class AccountEngine {
     this._logs = [];
     this._consecutiveFailures = 0;
     this._failedIssues = new Set();
+    this._manualBetTrace = false;   // verbose [TRACE] logging window — see manualBet()/_trace()
 
-    console.log(`[ENGINE] Created for account: ${acct.phone}`);
+    console.log(`[ENGINE] Created for account: ${acct.id}`);
   }
 
   /* ═══ Broadcast (room-scoped) ═══ */
   broadcast(event, data) {
     if (!this.io) return;
-    const room = this.acct.phone;
+    /* Room name is the composite "platform:phone" id (see state.js
+       Account#id) — matches what index.js joins sockets to, so the
+       same phone on two platforms never leaks into each other's room. */
+    const room = this.acct.id;
     if (event) {
       this.io.to(room).emit(event, data);
     } else {
-      this.io.to(room).emit('state', this.acct.snapshot());
+      const snap = this.acct.snapshot();
+      /* Diagnostic: whenever a state broadcast goes out while
+         maxLossActive is set, log whether anyone is actually in the
+         room to receive it. If sockets_in_room is 0, the account's
+         flag is fine but nothing's listening — a room/view mismatch,
+         not a maxLossActive bug. Remove once the manual-bet visibility
+         issue is confirmed fixed. */
+      if (snap.maxLossActive) {
+        const roomSet = this.io.sockets.adapter.rooms.get(room);
+        console.log(`[MAXLOSS-DEBUG] broadcasting state for room="${room}" engine=${snap.engine} maxLossActive=${snap.maxLossActive} level=${snap.level} stake=${snap.stake} sockets_in_room=${roomSet ? roomSet.size : 0}`);
+      }
+      this.io.to(room).emit('state', snap);
     }
   }
 
@@ -142,14 +157,14 @@ class AccountEngine {
     this.log('🔐 Attempting auto re-login...', 'l-info');
     this.toast('Re-Login', 'Token expired — reconnecting...', 'info');
     try {
-      const res = await proxy.relogin(phone, pwd);
+      const res = await proxy.relogin(this.acct.platform, phone, pwd);
       if (res.ok) {
         this.acct.lotteryToken = res.lotteryToken || '';
         this.acct.webapiToken  = res.webapiToken  || '';
         this.log('🔐 ✅ Auto re-login SUCCESS — tokens refreshed', 'l-info');
         this.toast('Re-Login OK', 'Session restored!', 'info');
         /* Notify connected clients to update their stored tokens */
-        this.broadcast('reauth', { phone, lotteryToken: res.lotteryToken, webapiToken: res.webapiToken });
+        this.broadcast('reauth', { phone, platform: this.acct.platform, lotteryToken: res.lotteryToken, webapiToken: res.webapiToken });
         this.broadcast();
         return true;
       } else {
@@ -257,11 +272,20 @@ class AccountEngine {
     } catch (e) { /* silent */ }
   }
 
-  /* ═══ ENGINE START ═══ */
-  async start() {
+  /* ═══ ENGINE START ═══
+     preserveLevel: keep the current martingale level instead of resetting
+     to LV1 — used internally by manualBet() to retry at the stake that
+     tripped the circuit breaker. Normal starts (button click, reconnect)
+     always reset to LV1 as before.
+     forceReal: skip Watch Mode even if acct.watchEnabled is on — used by
+     manualBet() so a recovery click always places an actual bet. Without
+     this, an account with Watch Mode on would resume into WATCHING and
+     sit there tracking virtual results, never placing the real bet the
+     admin just asked for — confirmed bug, this is the fix. */
+  async start(preserveLevel = false, forceReal = false) {
     if (this.acct.isRunning()) return;
 
-    this.acct.resetEngineState();
+    this.acct.resetEngineState(preserveLevel);
     predict.reset(this.acct.predState);
     this._stuckSince = 0;
     this._lastResolvedIssue = null;
@@ -271,7 +295,7 @@ class AccountEngine {
     this._consecutiveFailures = 0;
     this._failedIssues = new Set();
 
-    const watchOn = this.acct.watchEnabled;
+    const watchOn = forceReal ? false : this.acct.watchEnabled;
     this.acct.engine = watchOn ? E.WATCHING : E.WAITING;
 
     const info = this.acct.getFormulaInfo();
@@ -281,6 +305,7 @@ class AccountEngine {
 
     this.log(`▶ Engine STARTED | ${info.name} | LV${curLv} (₹${curStake}) | Max LV${lvls.length}${watchOn ? ' | 👁️ Watch' : ''}`, 'l-info');
     this.toast('Engine Started', watchOn ? 'Watch mode — observing...' : `LV${curLv} · ₹${curStake}`, 'info');
+    this._trace(`start() preserveLevel=${preserveLevel} forceReal=${forceReal} watchEnabled=${this.acct.watchEnabled} → engine=${this.acct.engine} level=${curLv} stake=${curStake} manualStakeOverride=${this.acct.manualStakeOverride}`);
 
     /* Fetch initial data + balance */
     await this.fetchDrawHistory(true);
@@ -338,14 +363,65 @@ class AccountEngine {
     this.startPassive();
   }
 
+  /* ═══ MANUAL RECOVERY BET ═══
+     One-shot resume after the max-level circuit breaker, fired by a
+     DEFAULT_KEY session from the dashboard (see the `manualBet` socket
+     handler in index.js, which is the actual authorization gate — this
+     method only checks the account is actually in that state).
+
+     customAmount (optional): a preferred stake for THIS one bet, in
+     place of the ladder's max-level amount. It does NOT touch the level
+     index — level stays wherever it was, so if this bet loses, the
+     circuit breaker re-trips exactly as it would have at the normal
+     stake, and the next manual click can pick a different amount again.
+     Consumed by attemptBet() the moment it reads getStake() for this
+     bet; a win resets to LV1 and normal ladder staking resumes.
+
+     A win resets to LV1 and the engine keeps running (normal autobet
+     continues); a loss re-trips the breaker immediately (nextLv >
+     maxLevel again) and re-stops with maxLossActive set, so another
+     manual click is needed — it never silently keeps firing on its own. */
+  async manualBet(customAmount) {
+    this._manualBetTrace = true;   // verbose tracing until this bet resolves — see _trace()
+    this._trace(`manualBet(${customAmount}) called — maxLossActive=${this.acct.maxLossActive} isRunning=${this.acct.isRunning()} watchEnabled=${this.acct.watchEnabled}`);
+    if (!this.acct.maxLossActive || this.acct.isRunning()) {
+      this._trace(`manualBet() REJECTED — nothing to recover from (maxLossActive=${this.acct.maxLossActive}) or already running (isRunning=${this.acct.isRunning()})`);
+      this._manualBetTrace = false;
+      return false;
+    }
+
+    const amt = Number(customAmount);
+    if (Number.isFinite(amt) && amt > 0) {
+      this.acct.manualStakeOverride = Math.floor(amt);
+    }
+    const stakeForLog = this.acct.manualStakeOverride ?? this.acct.getStake();
+
+    this.log(`🎯 Manual recovery bet — resuming at LV${this.acct.level} (₹${stakeForLog})`, 'l-info');
+    this.toast('Manual Bet', `Retrying at LV${this.acct.level} · ₹${stakeForLog}`, 'info');
+    await this.start(true, true);   // preserveLevel + forceReal — same level, never Watch Mode
+    return true;
+  }
+
+  /* Verbose tracing, gated to only the window around a manual recovery
+     bet (armed in manualBet(), disarmed once processResult() finishes
+     resolving it) — deliberately not always-on so normal autobet ticks
+     every 500ms don't get buried in log noise. */
+  _trace(msg) {
+    if (this._manualBetTrace) console.log(`[TRACE:${this.acct.id}] ${msg}`);
+  }
+
   /* ═══ ENGINE STEP (runs every 500ms) ═══ */
   async engineStep() {
     this._tickCount++;
-    if (!this.acct.isRunning() || this._busy) return;
+    if (!this.acct.isRunning() || this._busy) {
+      this._trace(`tick #${this._tickCount}: SKIPPED — isRunning=${this.acct.isRunning()} busy=${this._busy}`);
+      return;
+    }
 
     /* Broadcast countdown */
     const pi = periodInfo(this.acct.gameMode);
     this.broadcast('countdown', { secs: pi.secs, total: KP.modeCycleMs(this.acct.gameMode) / 1000 });
+    this._trace(`tick #${this._tickCount}: engine=${this.acct.engine} pendingBet=${this.acct.pendingBet ? this.acct.pendingBet.issue : 'none'} periodSecsLeft=${pi.secs} lastPredIssue=${this.acct.lastPredIssue}`);
 
     /* ── Pending bet: poll + status ── */
     if (this.acct.pendingBet) {
@@ -435,14 +511,17 @@ class AccountEngine {
         }
       }
       if (nextIssue && nextIssue === this.acct.lastPredIssue) {
+        this._trace(`tick #${this._tickCount}: still same period (nextIssue=${nextIssue} === lastPredIssue) — waiting for it to roll over, no bet yet`);
         this.broadcast();
         this._busy = false;
         return;
       }
+      this._trace(`tick #${this._tickCount}: NEW PERIOD — nextIssue=${nextIssue} !== lastPredIssue=${this.acct.lastPredIssue} — generating prediction`);
 
       /* Generate prediction — only once per new period (SHARED across accounts) */
       const pred = predict.runShared(histBuf, this.acct.formula, this.acct.gameMode);
       this.acct.prediction = pred;
+      this._trace(`prediction: pred=${pred.pred} forIssue=${pred.forIssue} formula=${pred.formula} noRecovery=${!!pred.noRecovery} log="${pred.log}"`);
 
       /* Record prediction in history */
       if (pred && pred.pred !== 'WAIT' && pred.forIssue) {
@@ -494,6 +573,7 @@ class AccountEngine {
       }
       this._safetySkippedIssue = null;
       this.acct.lastPredIssue = pred.forIssue;
+      this._trace(`calling handleNewPeriod() for issue=${pred.forIssue} pred=${pred.pred} engine=${this.acct.engine}`);
       await this.handleNewPeriod(pred);
     } catch (err) {
       this.log(`⚠️ ${err.message}`, 'l-err');
@@ -505,6 +585,7 @@ class AccountEngine {
   /* ═══ NEW PERIOD HANDLER ═══ */
   async handleNewPeriod(pred) {
     const engine = this.acct.engine;
+    this._trace(`handleNewPeriod() entry — engine=${engine} (${engine === E.WATCHING ? 'WATCH mode — will NOT place a real bet unless a virtual loss threshold trips' : 'real betting — will proceed to attemptBet()'})`);
 
     /* ── WATCHING mode ── */
     if (engine === E.WATCHING) {
@@ -562,23 +643,28 @@ class AccountEngine {
     }
 
     /* ── WAITING/BETTING: Place real bet ── */
+    this._trace(`handleNewPeriod() falling through to attemptBet() for issue=${pred.forIssue}`);
     await this.attemptBet(pred);
   }
 
   /* ═══ BET ATTEMPT ═══ */
   async attemptBet(pred) {
+    this._trace(`attemptBet() entry — issue=${pred.forIssue} pred=${pred.pred} level=${this.acct.level} manualStakeOverride=${this.acct.manualStakeOverride}`);
     /* Hard guards */
     if (this._failedIssues.has(pred.forIssue)) {
       this.log(`⛔ Skipping ...${pred.forIssue.slice(-5)} — already failed this session`, 'l-skip');
+      this._trace(`attemptBet() BLOCKED — issue=${pred.forIssue} is in _failedIssues (this session already gave up on it)`);
       return;
     }
     if (this._lastResolvedIssue && pred.forIssue === this._lastResolvedIssue) {
       this.log(`⛔ Blocked duplicate bet on resolved ...${pred.forIssue.slice(-5)}`, 'l-skip');
+      this._trace(`attemptBet() BLOCKED — issue=${pred.forIssue} already resolved as _lastResolvedIssue`);
       return;
     }
     const betHist = this.acct.betHistory;
     if (betHist.some(b => b.issue === pred.forIssue)) {
       this.log(`⛔ Blocked duplicate — already bet on ...${pred.forIssue.slice(-5)}`, 'l-skip');
+      this._trace(`attemptBet() BLOCKED — issue=${pred.forIssue} already appears in betHistory`);
       return;
     }
 
@@ -588,6 +674,7 @@ class AccountEngine {
       const latestIss = histBuf[0].issueNumber;
       if (BigInt(pred.forIssue) <= BigInt(latestIss)) {
         this.log(`🚨 DESYNC: pred for ...${pred.forIssue.slice(-5)} but data has ...${latestIss.slice(-5)} — skipping`, 'l-err');
+        this._trace(`attemptBet() BLOCKED — DESYNC: pred.forIssue=${pred.forIssue} <= latest known issue=${latestIss}`);
         this.acct.lastPredIssue = null;
         return;
       }
@@ -599,6 +686,7 @@ class AccountEngine {
 
     if (pi.left < safetyMs) {
       this.log(`⏳ Only ${pi.secs}s left — waiting for next period`, 'l-skip');
+      this._trace(`attemptBet() SKIPPED — only ${pi.left}ms left in period, need ${safetyMs}ms safety margin — will retry next period`);
       this._safetySkippedIssue = pred.forIssue;
       this.acct.lastPredIssue = null;
       return;
@@ -610,29 +698,43 @@ class AccountEngine {
 
     this.log(`⏳ Betting in ${(delay / 1000).toFixed(1)}s...`, 'l-dim');
     this.broadcast('betStatus', { icon: '⏳', label: 'PREPARING', detail: `Waiting ${(delay / 1000).toFixed(1)}s...`, cls: 'waiting', timer: '', bar: '0' });
+    this._trace(`attemptBet() PREPARING — sleeping ${delay}ms before placing (betStatus broadcast sent, this is what abBetStatus should show right now)`);
     await sleep(delay);
 
     /* Re-check safety after delay */
     const pi2 = periodInfo(this.acct.gameMode);
     if (pi2.left < safetyMs) {
       this.log(`⏳ Time ran out during delay — waiting for next period`, 'l-skip');
+      this._trace(`attemptBet() SKIPPED after delay — time ran out (${pi2.left}ms left < ${safetyMs}ms safety) — will retry next period`);
       this._safetySkippedIssue = pred.forIssue;
       this.acct.lastPredIssue = null;
       return;
     }
 
-    if (!this.acct.isRunning()) return;
+    if (!this.acct.isRunning()) {
+      this._trace(`attemptBet() ABORTED after delay — engine no longer running (stopped mid-delay)`);
+      return;
+    }
 
     /* Place bet */
     this.acct.engine = E.BETTING;
     const stake = this.acct.getStake();
+    /* Consume the manual-bet override here — this is the one bet it was
+       set for. Retries below (code:13/7/network) reuse this local `stake`
+       const, not a fresh getStake() call, so clearing now doesn't affect
+       them; the NEXT bet after this one (win-continue or next manual
+       click) correctly falls back to the normal ladder. */
+    this.acct.manualStakeOverride = null;
     const issueNumber = pred.forIssue;
     const betContent = pred.pred === 'Big' ? 'BigSmall_Big' : 'BigSmall_Small';
+
+    this._trace(`attemptBet() stake resolved to ₹${stake} (manualStakeOverride consumed) — balance=₹${this.acct.balance}`);
 
     /* Insufficient balance */
     if (this.acct.balance < stake) {
       this.log(`🚫 Insufficient balance: ₹${this.acct.balance.toFixed(2)} < ₹${stake} needed`, 'l-err');
       this.toast('Insufficient Balance', `Need ₹${stake}, have ₹${this.acct.balance.toFixed(2)}`, 'error');
+      this._trace(`attemptBet() ABORTED — insufficient balance (₹${this.acct.balance} < ₹${stake}) — calling stop(). This is silent in the UI beyond a toast: no betStatus event fires here, engine just goes to STOPPED.`);
       this.stop();
       return;
     }
@@ -640,9 +742,11 @@ class AccountEngine {
     this.broadcast('betStatus', { icon: '🎯', label: 'BETTING', detail: `${pred.pred} ₹${stake} on ...${issueNumber.slice(-5)}`, cls: 'betting', timer: '', bar: '0' });
     this.log(`🎯 ${pred.pred} ₹${stake} on ...${issueNumber.slice(-5)} | LV${level}`, 'l-bet');
     this.broadcast();
+    this._trace(`attemptBet() BETTING broadcast sent — calling api.placeBet(issue=${issueNumber}, stake=${stake}, betContent=${betContent}) NOW`);
 
     this._betPlacedAt = Date.now();
     let result = await api.placeBet(this.acct, issueNumber, stake, betContent);
+    this._trace(`api.placeBet() returned: code=${result.code} msg=${JSON.stringify(result.msg)}`);
 
     /* Retry: code:13 (period not available) */
     if (result.code === 13) {
@@ -735,12 +839,14 @@ class AccountEngine {
       this.acct.engine = E.CHECKING;
       this.broadcast('betStatus', { icon: '📊', label: 'BET ACTIVE', detail: `${pred.pred} ₹${stake} on ...${pred.forIssue.slice(-5)}`, cls: 'placed', timer: `Draw in ${waitSec}s`, bar: '0' });
       this.broadcast();
+      this._trace(`attemptBet() SUCCESS — bet is LIVE, pendingBet set, engine=CHECKING, waiting ${waitSec}s for draw to resolve`);
       return;
     }
 
     /* BET FAILED */
     this.toast('Bet Failed', result.msg || 'Unknown error', 'error');
     this.log(`❌ Bet FAILED: ${result.msg || JSON.stringify(result)}`, 'l-err');
+    this._trace(`attemptBet() FAILED after all retries — final result: code=${result.code} msg=${JSON.stringify(result.msg)} — falling into the code:4/401 relogin branch or just returning as a skip`);
     this._failedIssues.add(pred.forIssue);
     this._consecutiveFailures++;
 
@@ -842,6 +948,7 @@ class AccountEngine {
   async processResult(drawResult) {
     const pending = this.acct.pendingBet;
     if (!pending) return;
+    this._trace(`processResult() entry — issue=${pending.issue} via ${drawResult ? 'draw-api' : 'balance-fallback'}`);
 
     const issue = pending.issue;
     const betCost = pending.amount;
@@ -895,6 +1002,8 @@ class AccountEngine {
       this.broadcast('betStatus', { icon: '🏆', label: 'WIN', detail: `+₹${winAmount.toFixed(2)} (profit ₹${pnlDelta.toFixed(2)}) on ...${issue.slice(-5)} → LV1`, cls: 'win', timer: '', bar: '100' });
       this.toast('WIN! 🎉', `+₹${winAmount.toFixed(2)} profit ₹${pnlDelta.toFixed(2)} · Reset to LV1`, 'win');
       this.log(`🏆 WIN! +₹${winAmount.toFixed(2)} (profit: ₹${pnlDelta.toFixed(2)}) on ...${issue.slice(-5)} → LV1`, 'l-win');
+      this._trace(`processResult() WIN — level reset to LV1, autobet continues running, movie ends here`);
+      this._manualBetTrace = false;
     } else {
       this.acct.recordLoss(betCost);
       /* Increment TITAN loss streak on loss */
@@ -904,10 +1013,19 @@ class AccountEngine {
       /* Circuit breaker: max level */
       if (nextLv > this.acct.getMaxLevel()) {
         this.acct.pendingBet = null;
+        /* Stays stopped, but flagged for the manual-bet recovery panel
+           (DEFAULT_KEY only — see manualBet() and index.js) instead of a
+           dead end. acct.level is deliberately left at getMaxLevel() here
+           (never incremented past it) so a recovery attempt fires at the
+           stake that actually lost, not back at LV1. */
+        this.acct.maxLossActive = true;
+        console.log(`[MAXLOSS-DEBUG] circuit breaker tripped for ${this.acct.id} — maxLossActive set to ${this.acct.maxLossActive}, level pinned at ${this.acct.level}/${this.acct.getMaxLevel()}`);
         this.log(`🚨 ALL LEVELS EXHAUSTED at LV${this.acct.getMaxLevel()} — ENGINE STOPPED`, 'l-err');
         this.toast('Max Level!', `All ${this.acct.getMaxLevel()} levels used · Engine stopped`, 'error');
         this.broadcast('maxLevel', { msg: `Lost ₹${betCost} at LV${this.acct.getMaxLevel()} on ...${issue.slice(-5)}` });
         this.broadcast();
+        this._trace(`processResult() LOSS — circuit breaker RE-TRIPPED, maxLossActive=true again, popup should reopen. movie ends here`);
+        this._manualBetTrace = false;
         this.stop();
         return;
       }
@@ -917,6 +1035,8 @@ class AccountEngine {
       this.broadcast('betStatus', { icon: '💀', label: 'LOSS', detail: `-₹${betCost} → LV${nextLv} (₹${nextStake})`, cls: 'loss', timer: '', bar: '0' });
       this.toast('LOSS', `-₹${betCost} → LV${nextLv} (₹${nextStake})`, 'loss');
       this.log(`💀 LOSS ₹${betCost} on ...${issue.slice(-5)} → LV${nextLv} (₹${nextStake})`, 'l-loss');
+      this._trace(`processResult() LOSS but under max level — advanced to LV${nextLv}, autobet continues, movie ends here`);
+      this._manualBetTrace = false;
     }
 
     this.acct.pendingBet = null;

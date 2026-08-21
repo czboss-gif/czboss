@@ -1,10 +1,17 @@
 /* ═══════════════════════════════════════════
-   KINGPIN 3.0 — State Manager (Multi-Account)
+   KINGPIN — State Manager (Multi-Account, Multi-Platform)
    Each account = isolated state.
-   accounts Map<phone, Account>.
+   accounts Map<acctId, Account>, where acctId is "platform:phone".
+
+   The same phone can hold a separate account on each platform, with
+   its own balance, tokens and bet history — so phone alone is not a
+   unique key. Every registry lookup and every Mongo query is scoped
+   by platform. Rows written before platforms existed are treated as
+   GOA (see platforms.DEFAULT_PLATFORM and scripts/migrate-platform.js).
    ═══════════════════════════════════════════ */
 
 const KP = require('./config');
+const platforms = require('./platforms');
 const crypto = require('crypto');
 const UserConfig  = require('./models/UserConfig');
 const BetHistory  = require('./models/BetHistory');
@@ -37,8 +44,15 @@ function _decrypt(data) {
 
 const ENGINE = { STOPPED: 'stopped', WATCHING: 'watching', WAITING: 'waiting', BETTING: 'betting', CHECKING: 'checking' };
 
+/** Composite registry key. Always use this rather than building the
+ *  string by hand, so normalisation stays in one place. */
+function acctId(platform, phone) {
+  return `${platforms.resolve(platform)}:${String(phone || '').trim()}`;
+}
+
 class Account {
-  constructor(phone) {
+  constructor(platform, phone) {
+    this.platform     = platforms.resolve(platform);
     this.phone        = phone;
     this.engine       = ENGINE.STOPPED;
     this.level        = 1;
@@ -68,11 +82,30 @@ class Account {
     this.gameMode     = KP.GAME_MODE;            // 'WinGo_30S' | 'WinGo_1M' (per-account)
     this.formula      = KP.DEFAULT_FORMULA;
 
+    /* Set when the max-level circuit breaker trips (engine.js processResult).
+       Stays true across the stop so a DEFAULT_KEY session can see and fire a
+       one-shot recovery bet (see the `manualBet` socket handler) instead of
+       the account just sitting stopped. Cleared on the next start() (manual
+       or normal), on formula/gameMode change, and on a stats reset. */
+    this.maxLossActive = false;
+
+    /* One-shot stake override for the manual recovery bet — set by
+       manualBet(amount), consumed (and cleared) the moment attemptBet()
+       reads getStake() for that single bet, then getStake() falls back
+       to the normal ladder again. Lets the admin pick a specific amount
+       instead of always retrying at the locked-in max-level stake. */
+    this.manualStakeOverride = null;
+
     this.predState = {};
   }
 
   /* ═══ Getters ═══ */
-  getStake()       { return this.levels[this.level - 1] || this.levels[this.levels.length - 1]; }
+  /** Registry key / Socket.IO room name for this account. */
+  get id()         { return acctId(this.platform, this.phone); }
+  /** Mongo scope for every per-account collection. */
+  get scope()      { return { platform: this.platform, phone: this.phone }; }
+  getPlatformName(){ return platforms.get(this.platform).name; }
+  getStake()       { return this.manualStakeOverride != null ? this.manualStakeOverride : (this.levels[this.level - 1] || this.levels[this.levels.length - 1]); }
   getMaxLevel()    { return this.levels.length; }
   getTotalRisk()   { return this.levels.reduce((s, v) => s + v, 0); }
   getFormulaInfo() { return KP.FORMULAS[this.formula] || KP.FORMULAS[KP.DEFAULT_FORMULA]; }
@@ -81,7 +114,7 @@ class Account {
 
   /* ═══ Setters ═══ */
   setLevel(l)           { this.level = l; if (l > this.highestLevel) this.highestLevel = l; }
-  setFormula(f)         { if (KP.FORMULAS[f]) this.formula = f; }
+  setFormula(f)         { if (KP.FORMULAS[f]) { this.formula = f; this.maxLossActive = false; } }
   /* Switch game mode (30S ↔ 1M). Returns true if changed.
      Resets stream-bound state since the period stream is different, and
      snaps the formula to a valid one for the new mode. */
@@ -93,6 +126,7 @@ class Account {
     this.predState = {};
     this.lastPredIssue = null;
     this.prediction = null;
+    this.maxLossActive = false;   // recovery context (old formula/mode) no longer applies
     /* If current formula isn't valid for this mode, pick the mode default */
     const valid = KP.formulasForMode(mode);
     if (!valid[this.formula]) {
@@ -112,8 +146,8 @@ class Account {
     if (this.betHistory.length > 200) this.betHistory.pop();
     /* Persist to MongoDB (fire-and-forget) */
     BetHistory.findOneAndUpdate(
-      { phone: this.phone, issue: entry.issue },
-      { phone: this.phone, ...entry },
+      { ...this.scope, issue: entry.issue },
+      { ...this.scope, ...entry },
       { upsert: true, new: true }
     ).catch(e => console.error(`[DB] saveBetHistory error: ${e.message}`));
   }
@@ -124,7 +158,7 @@ class Account {
       if (entry.correct !== undefined) this.predHistory[0].correct = entry.correct;
       /* Update existing record in DB */
       PredHistory.findOneAndUpdate(
-        { phone: this.phone, forIssue: entry.forIssue },
+        { ...this.scope, forIssue: entry.forIssue },
         { result: this.predHistory[0].result, correct: this.predHistory[0].correct },
       ).catch(e => console.error(`[DB] updatePredHistory error: ${e.message}`));
       return;
@@ -133,8 +167,8 @@ class Account {
     if (this.predHistory.length > 100) this.predHistory.pop();
     /* Persist to MongoDB (fire-and-forget) */
     PredHistory.findOneAndUpdate(
-      { phone: this.phone, forIssue: entry.forIssue },
-      { phone: this.phone, ...entry },
+      { ...this.scope, forIssue: entry.forIssue },
+      { ...this.scope, ...entry },
       { upsert: true, new: true }
     ).catch(e => console.error(`[DB] savePredHistory error: ${e.message}`));
   }
@@ -146,7 +180,7 @@ class Account {
     ph.result = result;
     ph.correct = correct;
     PredHistory.findOneAndUpdate(
-      { phone: this.phone, forIssue: String(forIssue) },
+      { ...this.scope, forIssue: String(forIssue) },
       { result, correct },
     ).catch(e => console.error(`[DB] resolvePredHistory error: ${e.message}`));
   }
@@ -156,13 +190,21 @@ class Account {
     this.pendingBet = null; this.sessionStart = Date.now();
     this.watchPred = null; this.watchIssue = null; this.virtualWatches = 0;
     this.watchLossCount = 0; this.lastPredIssue = null; this.prediction = null;
+    this.maxLossActive = false;   // "Reset" also dismisses the manual-bet recovery panel
+    this.manualStakeOverride = null;
   }
 
-  /* Reset only engine-internal state — keeps cumulative stats intact */
-  resetEngineState() {
-    this.level = 1; this.pendingBet = null; this.sessionStart = Date.now();
+  /* Reset only engine-internal state — keeps cumulative stats intact.
+     preserveLevel: true keeps the current martingale level instead of
+     resetting to LV1 — used by the manual-bet recovery flow (engine.js
+     manualBet()) so a deliberate one-shot retry actually happens at the
+     stake that tripped the circuit breaker, not a fresh LV1 bet. */
+  resetEngineState(preserveLevel = false) {
+    if (!preserveLevel) this.level = 1;
+    this.pendingBet = null; this.sessionStart = Date.now();
     this.watchPred = null; this.watchIssue = null; this.virtualWatches = 0;
     this.watchLossCount = 0; this.lastPredIssue = null; this.prediction = null;
+    this.maxLossActive = false;   // any start() (normal or manual-bet-triggered) leaves recovery mode
   }
 
   resetForNewCycle() {
@@ -186,6 +228,7 @@ class Account {
       cycleSecs: KP.modeCycleMs(this.gameMode) / 1000,
       levels: this.levels, totalRisk: this.getTotalRisk(),
       stake: this.getStake(), maxLevel: this.getMaxLevel(),
+      maxLossActive: this.maxLossActive,
       watchEnabled: this.watchEnabled, watchLossTarget: this.watchLossTarget,
       prediction: this.prediction
         ? { pred: this.prediction.pred, forIssue: this.prediction.forIssue, log: this.prediction.log, formula: this.prediction.formula }
@@ -196,36 +239,44 @@ class Account {
       betHistory: this.betHistory.slice(0, 50),
       predHistory: this.predHistory.slice(0, 50),
       phone: this.phone,
+      platform: this.platform,
+      platformName: this.getPlatformName(),
+      id: this.id,
       loggedIn: !!this.lotteryToken,
     };
   }
 }
 
-/* ═══ Account Registry ═══ */
+/* ═══ Account Registry — keyed by "platform:phone" ═══ */
 const accounts = new Map();
 
-function getAccount(phone)  { return accounts.get(phone) || null; }
+/** Look up by composite id, or by (platform, phone). */
+function getAccount(platform, phone) {
+  const id = phone === undefined ? platform : acctId(platform, phone);
+  return accounts.get(id) || null;
+}
 
-async function createAccount(phone) {
-  if (accounts.has(phone)) return accounts.get(phone);
-  const acct = new Account(phone);
-  accounts.set(phone, acct);
+async function createAccount(platform, phone) {
+  const acct = new Account(platform, phone);
+  const id   = acct.id;
+  if (accounts.has(id)) return accounts.get(id);
+  accounts.set(id, acct);
 
   /* Load saved config from MongoDB (if any) */
   try {
     await loadConfig(acct);
   } catch (e) {
-    console.error(`[STATE] Failed to load config for ${phone}: ${e.message}`);
+    console.error(`[STATE] Failed to load config for ${id}: ${e.message}`);
   }
 
   /* Load bet & pred history from MongoDB */
   try {
     await loadHistory(acct);
   } catch (e) {
-    console.error(`[STATE] Failed to load history for ${phone}: ${e.message}`);
+    console.error(`[STATE] Failed to load history for ${id}: ${e.message}`);
   }
 
-  console.log(`[STATE] Account created: ${phone} (formula=${acct.formula}, levels=${acct.levels.length}LV, watch=${acct.watchEnabled}, bets=${acct.betHistory.length}, preds=${acct.predHistory.length}) (total: ${accounts.size})`);
+  console.log(`[STATE] Account created: ${id} (formula=${acct.formula}, levels=${acct.levels.length}LV, watch=${acct.watchEnabled}, bets=${acct.betHistory.length}, preds=${acct.predHistory.length}) (total: ${accounts.size})`);
   return acct;
 }
 
@@ -234,8 +285,8 @@ async function createAccount(phone) {
 async function loadHistory(acct) {
   try {
     const [bets, preds] = await Promise.all([
-      BetHistory.find({ phone: acct.phone }).sort({ createdAt: -1 }).limit(200).lean(),
-      PredHistory.find({ phone: acct.phone }).sort({ createdAt: -1 }).limit(100).lean(),
+      BetHistory.find(acct.scope).sort({ createdAt: -1 }).limit(200).lean(),
+      PredHistory.find(acct.scope).sort({ createdAt: -1 }).limit(100).lean(),
     ]);
     if (bets.length > 0) {
       acct.betHistory = bets.map(b => ({
@@ -261,7 +312,7 @@ async function loadHistory(acct) {
 
 async function loadConfig(acct) {
   try {
-    const doc = await UserConfig.findOne({ phone: acct.phone }).lean();
+    const doc = await UserConfig.findOne(acct.scope).lean();
     if (doc) {
       if (doc.gameMode && KP.MODES[doc.gameMode])    acct.gameMode = doc.gameMode;
       if (doc.formula && KP.FORMULAS[doc.formula])   acct.formula = doc.formula;
@@ -278,12 +329,13 @@ async function loadConfig(acct) {
   }
 }
 
-async function saveConfig(phone) {
-  const acct = accounts.get(phone);
+/** Persist config. Accepts a composite id or (platform, phone). */
+async function saveConfig(platform, phone) {
+  const acct = getAccount(platform, phone);
   if (!acct) return;
   try {
     const update = {
-        phone,
+        ...acct.scope,
         gameMode:        acct.gameMode,
         formula:         acct.formula,
         levels:          acct.levels,
@@ -296,24 +348,29 @@ async function saveConfig(phone) {
       update.pwdPlain = acct.pwd;
     }
     await UserConfig.findOneAndUpdate(
-      { phone },
+      acct.scope,
       update,
       { upsert: true, new: true }
     );
-    console.log(`[DB] Config saved for ${phone}`);
+    console.log(`[DB] Config saved for ${acct.id}`);
   } catch (e) {
-    console.error(`[DB] saveConfig error for ${phone}: ${e.message}`);
+    console.error(`[DB] saveConfig error for ${acct.id}: ${e.message}`);
   }
 }
 
-function removeAccount(phone) {
-  accounts.delete(phone);
-  console.log(`[STATE] Account removed: ${phone} (total: ${accounts.size})`);
+/** Remove from the registry. Accepts a composite id or (platform, phone). */
+function removeAccount(platform, phone) {
+  const id = phone === undefined ? platform : acctId(platform, phone);
+  accounts.delete(id);
+  console.log(`[STATE] Account removed: ${id} (total: ${accounts.size})`);
 }
 
 function listAccounts() {
   return Array.from(accounts.values()).map(a => ({
+    id: a.id,
     phone: a.phone,
+    platform: a.platform,
+    platformName: a.getPlatformName(),
     engine: a.engine,
     balance: a.balance,
     pnl: a.pnl,
@@ -328,7 +385,7 @@ function listAccounts() {
 function getAccountCount() { return accounts.size; }
 
 module.exports = {
-  ENGINE, Account,
+  ENGINE, Account, acctId,
   getAccount, createAccount, removeAccount, listAccounts, getAccountCount,
   saveConfig, loadConfig,
 };

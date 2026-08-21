@@ -99,6 +99,7 @@
   sessionStorage.removeItem('kp_key');
   sessionStorage.removeItem('kp_is_default');
   sessionStorage.removeItem('kp_bound_phone');
+  sessionStorage.removeItem('kp_bound_platform');
   sessionStorage.removeItem('kp_session_id');
 
   /* Auto-format key as user types: XXXXX-XXXXX-XXXXX-XXXXX-XXXXX */
@@ -125,6 +126,7 @@
         sessionStorage.setItem('kp_key', key);
         sessionStorage.setItem('kp_is_default', d.isDefault ? '1' : '0');
         sessionStorage.setItem('kp_bound_phone', d.boundPhone || '');
+        sessionStorage.setItem('kp_bound_platform', d.boundPlatform || '');
         G.style.display='none';
         /* Re-apply permissions now that sessionStorage is populated */
         if(typeof applyKeyPermissions === 'function') applyKeyPermissions();
@@ -153,6 +155,9 @@
     <div class="kp-gate-logo">KINGPIN</div>
     <div class="kp-gate-sub">AUTO BET ENGINE 4.0</div>
 
+    <div class="kp-input-label">PLATFORM</div>
+    <div class="kp-platform-row" id="abPlatformRow"></div>
+
     <div class="kp-input-label">PHONE</div>
     <input type="tel" id="abPhone" placeholder="Phone number" autocomplete="off" style="margin-bottom:10px" />
 
@@ -164,7 +169,7 @@
     <button class="kp-btn-main" id="abBtnCaptcha" style="margin-bottom:10px">🔑 GET CAPTCHA</button>
 
     <div id="abCaptchaSection" style="display:none">
-      <div class="captcha-box">
+      <div class="captcha-box" id="abCaptchaBox">
         <img id="abCaptchaBg" class="captcha-bg" />
         <img id="abCaptchaPiece" class="captcha-piece" />
       </div>
@@ -220,6 +225,20 @@
     </div>
   </div>
 
+  <!-- MANUAL RECOVERY BET POPUP (DEFAULT_KEY only — opened/closed by renderState
+       via s.maxLossActive, never dismissed by hand: it reflects real engine
+       state, not a UI preference) -->
+  <div class="kp-manualbet-modal" id="abManualBetModal">
+    <div class="kp-manualbet-box">
+      <div class="kp-manualbet-head">🎯 Manual Recovery Bet</div>
+      <div class="kp-manualbet-msg" id="abManualBetModalMsg">All levels exhausted — place a manual bet to recover.</div>
+      <div class="kp-manual-row">
+        <input type="number" id="abManualBetAmt" class="kp-manual-amt" min="1" step="1" placeholder="Amount" />
+        <button class="kp-btn-manual" id="abBtnManualBet">PLACE BET</button>
+      </div>
+    </div>
+  </div>
+
   <!-- TWO COLUMN GRID -->
   <div class="kp-grid">
 
@@ -272,7 +291,7 @@
         <div class="kp-bs-bar"><div class="kp-bs-bar-fill" id="abBsBar" style="width:0%"></div></div>
       </div>
 
-      <!-- Max Level Banner -->
+      <!-- Max Level Banner (informational — shown to every viewer) -->
       <div class="ab-maxlvl-banner" id="abMaxLvlBanner" style="display:none">
         <div class="banner-title">🚨 BETTING STOPPED</div>
         <div class="banner-msg" id="abMaxLvlMsg">All levels exhausted.</div>
@@ -490,17 +509,31 @@
   'use strict';
 
   /* ═══ Multi-Account State ═══ */
-  var accounts = [];        // [{ phone, lotteryToken, webapiToken }]
-  var currentView = null;   // phone of the account currently displayed
+  var accounts = [];        // [{ phone, platform, lotteryToken, webapiToken }]
+  var currentView = null;   // "platform:phone" id of the account currently displayed — matches Account#id server-side
   var captchaId    = null;
   var sliderX      = 0;
   var trackData    = [];
   var trackStart   = '';
   var dragging     = false;
   var deviceId     = 'kp3_' + Math.random().toString(36).slice(2, 10);
+
+  /* Dhani logs in with a `browserId` fingerprint instead of a deviceId.
+     A real browser's stays constant across visits, so this is generated
+     once and persisted in localStorage (survives tab/session boundaries,
+     unlike the sessionStorage state above) rather than re-rolled per login. */
+  function getBrowserId() {
+    var id = localStorage.getItem('kp_browser_id');
+    if (!id) {
+      id = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+      localStorage.setItem('kp_browser_id', id);
+    }
+    return id;
+  }
   var socket       = null;
   var betRecordPage = 1;
   var betRecordLoaded = false;
+  var _manualBetShown = false;  // tracks the maxLossActive panel's own show/hide transition (see renderState)
 
   /* ═══ Key Gate State ═══ */
   var kpKey            = sessionStorage.getItem('kp_key') || '';
@@ -509,6 +542,29 @@
   var kpBalanceSaved   = false;
   var kpPendingBalance = 0; // holds balance until sessionId is ready
 
+  /* ═══ Platform Registry ═══
+     Fetched from the server so a new platform (e.g. a 3rd site added
+     later) shows up here with zero client changes. Falls back to GOA
+     alone if the fetch fails, so login still works offline-ish. */
+  var PLATFORM_META = { goa: {
+    id: 'goa', name: 'GOA Games',
+    captcha: { bgW: 280, bgH: 175, slW: 56, slH: 175 },
+    login: { user: 'username', pass: 'pwd', type: 'logintype', typeValue: 'mobile', pack: 'packId' },
+  } };
+  var platformList = ['goa'];
+  var selectedPlatform = sessionStorage.getItem('kp_platform') || 'goa';
+  var platformsReady = fetch('/api/platforms').then(function(r){ return r.json(); }).then(function(list){
+    if (Array.isArray(list) && list.length > 0) {
+      PLATFORM_META = {};
+      platformList = [];
+      list.forEach(function(p){ PLATFORM_META[p.id] = p; platformList.push(p.id); });
+      if (!PLATFORM_META[selectedPlatform]) selectedPlatform = platformList[0];
+    }
+    renderPlatformRow();
+  }).catch(function(){ /* keep the GOA-only fallback above */ });
+
+  function acctId(platform, phone) { return (platform || 'goa') + ':' + phone; }
+
   /* ═══ Persistence ═══ */
   function saveAccounts() {
     sessionStorage.setItem('kp_accounts', JSON.stringify(accounts));
@@ -516,7 +572,12 @@
   }
   function loadAccounts() {
     try { accounts = JSON.parse(sessionStorage.getItem('kp_accounts') || '[]'); } catch(e) { accounts = []; }
-    currentView = sessionStorage.getItem('kp_current_view') || null;
+    /* Upgrade path: sessions saved before multi-platform existed have no
+       .platform on each account and a bare-phone kp_current_view. Both
+       default to GOA — the only platform that existed at the time. */
+    accounts.forEach(function(a){ if (!a.platform) a.platform = 'goa'; });
+    var savedView = sessionStorage.getItem('kp_current_view') || null;
+    currentView = savedView && savedView.indexOf(':') === -1 ? acctId('goa', savedView) : savedView;
   }
   loadAccounts();
 
@@ -546,6 +607,7 @@
       if (accounts.length > 1) { accounts = accounts.slice(0, 1); saveAccounts(); }
     }
     lockPhoneField();
+    renderPlatformRow();
     if (window.kpApplySourceGuard) window.kpApplySourceGuard();   /* unlock right-click etc. for default key */
   }
 
@@ -604,6 +666,34 @@
   }
   lockPhoneField();
 
+  /* Platform picker. A non-default key locks to whatever platform it
+     first bound to (see AccessKey.boundPlatform, server-side) — same
+     shape as the phone lock above. */
+  function renderPlatformRow() {
+    var row = $('abPlatformRow');
+    if (!row) return;
+    var boundPlatform = sessionStorage.getItem('kp_bound_platform') || '';
+    var locked = !kpGetIsDefault() && !!boundPlatform;
+    if (locked && PLATFORM_META[boundPlatform]) selectedPlatform = boundPlatform;
+    row.innerHTML = '';
+    platformList.forEach(function(pid){
+      var meta = PLATFORM_META[pid];
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'kp-platform-btn' + (pid === selectedPlatform ? ' active' : '');
+      btn.textContent = meta.name;
+      btn.disabled = locked && pid !== selectedPlatform;
+      btn.addEventListener('click', function(){
+        if (locked) return;
+        selectedPlatform = pid;
+        sessionStorage.setItem('kp_platform', pid);
+        renderPlatformRow();
+      });
+      row.appendChild(btn);
+    });
+  }
+  renderPlatformRow();
+
   /* ═══ Helpers ═══ */
   function status(msg, ok) {
     statusEl.textContent = msg;
@@ -655,6 +745,7 @@
       return;
     }
     socket = io({ transports: ['websocket', 'polling'] });
+    window.KP_DEBUG = { get socket() { return socket; }, get currentView() { return currentView; }, get accounts() { return accounts; } }; // console debugging — socket/currentView are otherwise closure-scoped
 
     socket.on('connect', function() {
       console.log('[KP] Socket connected via ' + socket.io.engine.transport.name);
@@ -673,13 +764,13 @@
     /* ── Full state snapshot (for current view) ── */
     socket.on('state', function(s) {
       // Only render if this state is for our current view
-      if (s.phone === currentView) {
+      if (s.id === currentView) {
         renderState(s);
       }
       // Auto-load bet record
-      if (!betRecordLoaded && s.loggedIn && s.phone === currentView) {
+      if (!betRecordLoaded && s.loggedIn && s.id === currentView) {
         betRecordLoaded = true;
-        socket.emit('getBetRecord', { phone: currentView, page: 1 });
+        socket.emit('getBetRecord', { page: 1 }); // targets the server's viewingId
       }
     });
 
@@ -690,15 +781,16 @@
 
     /* ── Account removed ── */
     socket.on('accountRemoved', function(d) {
-      accounts = accounts.filter(function(a) { return a.phone !== d.phone; });
-      if (currentView === d.phone) {
-        currentView = accounts.length > 0 ? accounts[0].phone : null;
+      accounts = accounts.filter(function(a) { return acctId(a.platform, a.phone) !== d.id; });
+      if (currentView === d.id) {
+        currentView = accounts.length > 0 ? acctId(accounts[0].platform, accounts[0].phone) : null;
       }
       saveAccounts();
       if (accounts.length === 0) {
         showLogin();
       } else if (currentView) {
-        socket.emit('switchView', { phone: currentView });
+        var cv = accounts.filter(function(a){ return acctId(a.platform, a.phone) === currentView; })[0];
+        if (cv) socket.emit('switchView', { phone: cv.phone, platform: cv.platform });
       }
     });
 
@@ -740,8 +832,11 @@
 
     /* ── Max Level Banner ── */
     socket.on('maxLevel', function(d) {
-      var el = $('abMaxLvlBanner');
-      el.style.display = '';
+      /* Sets the specific loss message immediately; renderState (driven by
+         s.maxLossActive) is what actually owns show/hide now, so this only
+         needs to set an explicit value for the brief window before the
+         next 'state' event arrives — same 'block' fix as renderState. */
+      $('abMaxLvlBanner').style.display = 'block';
       $('abMaxLvlMsg').textContent = d.msg || 'All levels exhausted.';
     });
 
@@ -756,7 +851,7 @@
     /* ── Re-auth: server re-logged in, update stored tokens ── */
     socket.on('reauth', function(d) {
       if (!d || !d.phone) return;
-      var acct = accounts.find(function(a) { return a.phone === d.phone; });
+      var acct = accounts.find(function(a) { return a.phone === d.phone && a.platform === (d.platform || 'goa'); });
       if (acct) {
         acct.lotteryToken = d.lotteryToken || acct.lotteryToken;
         acct.webapiToken  = d.webapiToken  || acct.webapiToken;
@@ -779,15 +874,19 @@
         lotteryToken: a.lotteryToken,
         webapiToken: a.webapiToken,
         phone: a.phone,
+        platform: a.platform,
         pwd: a.pwd || '',
         key: sessionStorage.getItem('kp_key') || '',
       });
     });
     // Switch to current view
     if (currentView) {
-      setTimeout(function() {
-        socket.emit('switchView', { phone: currentView });
-      }, 500);
+      var cv = accounts.filter(function(a){ return acctId(a.platform, a.phone) === currentView; })[0];
+      if (cv) {
+        setTimeout(function() {
+          socket.emit('switchView', { phone: cv.phone, platform: cv.platform });
+        }, 500);
+      }
     }
   }
 
@@ -796,26 +895,27 @@
   function renderAccountList(list) {
     _acctList = list || [];
 
-    /* Button: show the CURRENT account's FULL mobile number + total count */
-    var cur = _acctList.filter(function(a){ return a.phone === currentView; })[0];
-    var lbl = $('abAcctCurLabel'); if (lbl) lbl.textContent = cur ? cur.phone : (currentView || 'No account');
+    /* Button: show the CURRENT account's FULL mobile number + total count.
+       Server sends .id ("platform:phone") and .platformName on every row. */
+    var cur = _acctList.filter(function(a){ return a.id === currentView; })[0];
+    var lbl = $('abAcctCurLabel'); if (lbl) lbl.textContent = cur ? (cur.platformName + ' · ' + cur.phone) : (currentView || 'No account');
     var cnt = $('abAcctCount');    if (cnt) cnt.textContent = _acctList.length;
     var mc  = $('abAcctModalCount'); if (mc) mc.textContent = '(' + _acctList.length + ')';
 
-    /* Popup list: one row per account, FULL number, switchable */
+    /* Popup list: one row per account, FULL number + platform, switchable */
     var box = $('abAcctModalList'); if (!box) return;
     box.innerHTML = '';
     _acctList.forEach(function(a) {
       var row = document.createElement('div');
-      row.className = 'kp-acct-row' + (a.phone === currentView ? ' active' : '');
-      row.setAttribute('data-phone', a.phone);
+      row.className = 'kp-acct-row' + (a.id === currentView ? ' active' : '');
+      row.setAttribute('data-id', a.id);
       var statusCls = 'pill-' + (a.engine || 'stopped');
-      row.innerHTML = '<span class="kp-acct-row-check">' + (a.phone === currentView ? '✓' : '') + '</span>'
-        + '<span class="kp-acct-row-phone">' + a.phone + '</span>'
+      row.innerHTML = '<span class="kp-acct-row-check">' + (a.id === currentView ? '✓' : '') + '</span>'
+        + '<span class="kp-acct-row-phone">' + (a.platformName || a.platform) + ' · ' + a.phone + '</span>'
         + '<span class="kp-acct-row-status ' + statusCls + '">' + (a.engine || 'stopped').toUpperCase() + '</span>'
         + '<span class="kp-acct-row-bal">₹' + (a.balance || 0).toFixed(0) + '</span>'
         + '<span class="kp-acct-row-pnl ' + ((a.pnl || 0) >= 0 ? 'vg' : 'vr') + '">' + formatPnl(a.pnl || 0) + '</span>';
-      row.addEventListener('click', function() { switchToAccount(a.phone); closeAcctModal(); });
+      row.addEventListener('click', function() { switchToAccount(a.platform, a.phone); closeAcctModal(); });
       box.appendChild(row);
     });
   }
@@ -823,12 +923,13 @@
   function openAcctModal()  { var m = $('abAcctModal'); if (m) m.classList.add('open'); }
   function closeAcctModal() { var m = $('abAcctModal'); if (m) m.classList.remove('open'); }
 
-  function switchToAccount(phone) {
-    if (currentView === phone) return;
-    currentView = phone;
+  function switchToAccount(platform, phone) {
+    var id = acctId(platform, phone);
+    if (currentView === id) return;
+    currentView = id;
     saveAccounts();
     betRecordLoaded = false;
-    if (socket) socket.emit('switchView', { phone: phone });
+    if (socket) socket.emit('switchView', { phone: phone, platform: platform });
     renderAccountList(_acctList);   // refresh button label + row highlight
   }
 
@@ -849,10 +950,43 @@
       $('abBtnStart').style.display = '';
       $('abBtnStop').style.display = 'none';
       $('abBetStatus').style.display = 'none';
-      $('abMaxLvlBanner').style.display = 'none';
+      /* Driven by the persisted account flag (not the one-shot 'maxLevel'
+         event) so this survives a reconnect / switchView / page reload
+         instead of only flashing at the moment the breaker trips. */
+      if (s.maxLossActive) {
+        /* MUST be an explicit value, not '' — .ab-maxlvl-banner's CSS class
+           itself declares display:none (it's "hidden by default"), so
+           clearing the inline override just falls back to that class rule
+           and stays hidden. This was the actual bug: DEFAULT_KEY detection,
+           the socket room, and maxLossActive were all correct the whole
+           time — the banner was simply never capable of becoming visible. */
+        $('abMaxLvlBanner').style.display = 'block';
+        if (kpGetIsDefault()) {
+          $('abManualBetModal').classList.add('open');
+          $('abManualBetModalMsg').textContent = 'Stopped at LV' + s.level + ' — place a manual bet to recover, or a fresh amount below.';
+          /* Pre-fill with the stake that tripped the breaker, but only on
+             the transition INTO this state — don't stomp on an amount the
+             admin is mid-typing across routine state re-renders. Also
+             re-arms on every NEW failure (see the reset below), so a
+             re-trip after a losing manual bet correctly re-prompts. */
+          if (!_manualBetShown) {
+            $('abManualBetAmt').value = s.stake;
+            _manualBetShown = true;
+          }
+        }
+      } else {
+        $('abMaxLvlBanner').style.display = 'none';
+        $('abManualBetModal').classList.remove('open');
+        _manualBetShown = false;
+      }
     } else {
       $('abBtnStart').style.display = 'none';
       $('abBtnStop').style.display = '';
+      $('abMaxLvlBanner').style.display = 'none';
+      /* Bet in flight (manual or automatic) — popup has no business being
+         open once the engine is actually running; abBetStatus takes over. */
+      $('abManualBetModal').classList.remove('open');
+      _manualBetShown = false;
     }
 
     // Mini stats
@@ -1029,7 +1163,7 @@
         var inputs = el.querySelectorAll('.level-input');
         var custom = [];
         inputs.forEach(function(inp) { custom.push(parseInt(inp.value) || 1); });
-        if (socket) socket.emit('setLevels', { phone: currentView, custom: custom });
+        if (socket) socket.emit('setLevels', { custom: custom }); // targets server's viewingId
         editMode = false;
         var tog = document.getElementById('abEditToggle');
         if (tog) tog.checked = false;
@@ -1150,7 +1284,7 @@
         + '<div class="ab-fc-desc">' + f.desc + '</div>'
         + '<div class="ab-fc-tags">' + f.tags.map(function(t) { return '<span class="ab-fc-tag">' + t + '</span>'; }).join('') + '</div>';
       card.onclick = function() {
-        socket.emit('setFormula', { phone: currentView, formula: key });
+        socket.emit('setFormula', { formula: key }); // targets server's viewingId
         $('abFormulaPopup').style.display = 'none';
       };
       grid.appendChild(card);
@@ -1216,16 +1350,17 @@
   captchaBtn.addEventListener('click', handleCaptcha);
 
   async function handleCaptcha() {
+    await platformsReady;
     var phone = phoneEl.value.trim().replace(/[^0-9]/g,'');
     if (!phone) { status('❌ Enter your phone number first', false); return; }
 
-    /* Check key→phone binding before fetching captcha */
+    /* Check key→phone→platform binding before fetching captcha */
     if (kpKey) {
       try {
         var vr = await fetch('/api/keys/validate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: kpKey, phone: phone })
+          body: JSON.stringify({ key: kpKey, phone: phone, platform: selectedPlatform })
         });
         var vd = await vr.json();
         if (!vd.ok) {
@@ -1241,7 +1376,7 @@
     captchaBtn.disabled = true;
     captchaBtn.textContent = 'Loading...';
     try {
-      var res = await fetch('/api/goa/captcha', {
+      var res = await fetch('/api/platform/' + selectedPlatform + '/captcha', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
@@ -1251,11 +1386,18 @@
         captchaId = data.data.captchaId;
         $('abCaptchaBg').src = data.data.backgroundImage;
         $('abCaptchaPiece').src = data.data.sliderImage;
+        /* Size the on-screen box to match this platform's captcha geometry,
+           so the pixel coordinates dragged on screen are the same ones
+           reported in the login track payload — see setupSlider(). */
+        var geo = PLATFORM_META[selectedPlatform].captcha;
+        var box = $('abCaptchaBox');
+        box.style.width  = geo.bgW + 'px';
+        box.style.height = geo.bgH + 'px';
         captchaSec.style.display = 'block';
         sliderX = 0; trackData = [];
         $('abCaptchaPiece').style.left = '0px';
         $('abSliderThumb').style.left = '3px';
-        setupSlider();
+        setupSlider(geo);
         status('✅ Captcha loaded — drag the slider', true);
       } else {
         status(data?.msg || 'Captcha failed', false);
@@ -1269,11 +1411,13 @@
   }
 
   /* ═══ SLIDER ═══ */
-  function setupSlider() {
+  function setupSlider(geo) {
     var thumb = $('abSliderThumb');
     var piece = $('abCaptchaPiece');
     var track = $('abSliderTrack');
-    var trackWidth = 280 - 36;
+    /* Drag range matches the platform's own background width, so the x
+       we report in the track payload is honest for whichever site this is. */
+    var trackWidth = geo.bgW - 36;
 
     function onStart(e) {
       dragging = true;
@@ -1309,14 +1453,16 @@
   pwdEl.addEventListener('keydown', function(e){ if(e.key==='Enter') handleLogin(); });
 
   async function handleLogin() {
+    await platformsReady;
+    var platform = selectedPlatform;
     var phone = phoneEl.value.trim();
     var pwd   = pwdEl.value.trim();
     if (!phone || !pwd) { status('❌ Enter phone & password', false); return; }
     if (!captchaId) { status('❌ Get captcha first', false); return; }
     if (trackData.length < 3) { status('❌ Drag the slider', false); return; }
 
-    // Check if already added
-    if (accounts.some(function(a) { return a.phone === phone; })) {
+    // Check if already added (same phone on a DIFFERENT platform is a separate account)
+    if (accounts.some(function(a) { return a.phone === phone && a.platform === platform; })) {
       status('⚠️ Account already added', false);
       return;
     }
@@ -1325,7 +1471,7 @@
     loginBtn.disabled = true;
 
     try {
-      /* ── Hard server-side gate: key+phone binding check ──
+      /* ── Hard server-side gate: key+phone+platform binding check ──
          Always read kp_key fresh from sessionStorage — the JS variable
          kpKey may be stale if the gate ran after the IIFE initialized. */
       var activeKey = sessionStorage.getItem('kp_key') || kpKey;
@@ -1338,7 +1484,7 @@
       var kc = await fetch('/api/keys/login-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: activeKey, phone: cleaned0 })
+        body: JSON.stringify({ key: activeKey, phone: cleaned0, platform: platform })
       });
       var kd = await kc.json();
       if (!kd.ok) {
@@ -1351,18 +1497,22 @@
       var cleaned  = phone.replace(/[^0-9]/g, '');
       var username = cleaned.length <= 10 ? '91' + cleaned : cleaned;
 
-      var loginPayload = {
-        username: username,
-        captchaId: captchaId,
-        track: { backgroundImageWidth: 280, backgroundImageHeight: 175, sliderImageWidth: 56, sliderImageHeight: 175, startTime: trackStart, endTime: new Date().toISOString(), tracks: trackData },
-        pwd: pwd,
-        phonetype: 0,
-        logintype: 'mobile',
-        packId: '',
-        deviceId: deviceId
-      };
+      /* Build the login body in this platform's own field naming (see
+         platforms.js server-side — the map here comes straight from
+         GET /api/platforms, so a new platform needs no client change). */
+      var lf = PLATFORM_META[platform].login;
+      var loginPayload = {};
+      loginPayload[lf.user] = username;
+      loginPayload[lf.pass] = pwd;
+      loginPayload[lf.type] = lf.typeValue;
+      loginPayload[lf.pack] = '';
+      loginPayload.captchaId = captchaId;
+      loginPayload.track = { backgroundImageWidth: PLATFORM_META[platform].captcha.bgW, backgroundImageHeight: PLATFORM_META[platform].captcha.bgH, sliderImageWidth: PLATFORM_META[platform].captcha.slW, sliderImageHeight: PLATFORM_META[platform].captcha.slH, startTime: trackStart, endTime: new Date().toISOString(), tracks: trackData };
+      loginPayload.deviceId = deviceId;
+      if (platform === 'goa')  loginPayload.phonetype = 0;
+      if (platform === 'dhan') loginPayload.browserId = getBrowserId();
 
-      var res = await fetch('/api/goa/login', {
+      var res = await fetch('/api/platform/' + platform + '/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginPayload)
@@ -1380,6 +1530,7 @@
 
         var acctEntry = {
           phone: phone,
+          platform: platform,
           lotteryToken: lt,
           webapiToken: d.token || '',
           pwd: pwd,
@@ -1388,17 +1539,17 @@
         /* Regular key users: enforce single account — replace any existing */
         if (!kpIsDefault) accounts = [];
         accounts.push(acctEntry);
-        currentView = phone;
+        currentView = acctId(platform, phone);
         saveAccounts();
 
-        /* Bind key → phone and create session row (balance captured later from state event) */
+        /* Bind key → phone+platform and create session row (balance captured later from state event) */
         var activeKey = sessionStorage.getItem('kp_key') || kpKey;
         if (activeKey) {
           kpBalanceSaved = false;
           fetch('/api/keys/bind', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: activeKey, phone: phone })
+            body: JSON.stringify({ key: activeKey, phone: phone, platform: platform })
           })
           .then(function(r){ return r.json(); })
           .then(function(bd){
@@ -1410,11 +1561,13 @@
               /* Update kpKey from sessionStorage in case it was stale */
               kpKey = sessionStorage.getItem('kp_key') || kpKey;
 
-              /* Lock phone field from now on for this key */
+              /* Lock phone + platform field from now on for this key */
               if (!kpIsDefault && !kpBoundPhone) {
                 kpBoundPhone = phone;
                 sessionStorage.setItem('kp_bound_phone', phone);
+                sessionStorage.setItem('kp_bound_platform', platform);
                 lockPhoneField();
+                renderPlatformRow();
               }
 
               /* State event may have already arrived with balance — flush it now */
@@ -1479,14 +1632,14 @@
   // Logout (current account only)
   $('abBtnLogout').addEventListener('click', function(){
     if (!currentView) return;
-    if (socket) socket.emit('logout', { phone: currentView });
-    accounts = accounts.filter(function(a) { return a.phone !== currentView; });
+    if (socket) socket.emit('logout', {}); // targets server's viewingId
+    accounts = accounts.filter(function(a) { return acctId(a.platform, a.phone) !== currentView; });
 
     if (kpIsDefault && accounts.length > 0) {
       /* Super user: switch to next available account */
-      currentView = accounts[0].phone;
+      currentView = acctId(accounts[0].platform, accounts[0].phone);
       saveAccounts();
-      socket.emit('switchView', { phone: currentView });
+      socket.emit('switchView', { phone: accounts[0].phone, platform: accounts[0].platform });
     } else {
       /* Regular user (or last account): back to login, key stays valid */
       currentView = null;
@@ -1505,19 +1658,37 @@
   $('abBtnStart').addEventListener('click', function(){
     if (!socket || !currentView) return;
     window._kpStopSent = false;
-    socket.emit('start', { phone: currentView, sessionId: kpSessionId || null });
+    socket.emit('start', { sessionId: kpSessionId || null }); // targets server's viewingId
   });
 
   // Stop
   $('abBtnStop').addEventListener('click', function(){
     if (!socket || !currentView) return;
     window._kpStopSent = true; // mark as user-initiated, suppress auto-stop handler
-    socket.emit('stop', { phone: currentView, sessionId: kpSessionId || null, profit: kpLastPnl });
+    socket.emit('stop', { sessionId: kpSessionId || null, profit: kpLastPnl }); // targets server's viewingId
+  });
+
+  // Manual Recovery Bet (DEFAULT_KEY only — server re-checks this, the
+  // popup is just never opened client-side for everyone else in renderState)
+  $('abBtnManualBet').addEventListener('click', function(e){
+    if (!socket || !currentView) return;
+    var amt = parseInt($('abManualBetAmt').value, 10);
+    if (!amt || amt < 1) { toast('Manual Bet', 'Enter a valid amount', 'error'); return; }
+    e.target.disabled = true;
+    window._kpStopSent = false; // this resumes the engine, same as Start
+    socket.emit('manualBet', { amount: amt }); // targets server's viewingId
+    /* Close right away — the bet is submitted, and abBetStatus (driven by
+       the same 'betStatus' events a normal autobet round fires) takes over
+       showing PREPARING → BETTING → result, identical to normal autobet.
+       If it loses, the next 'state' with maxLossActive:true reopens this
+       automatically (renderState); a win just keeps autobet running. */
+    $('abManualBetModal').classList.remove('open');
+    setTimeout(function(){ e.target.disabled = false; }, 2000); // guard against double-click
   });
 
   // Reset Stats
   $('abBtnClearStats').addEventListener('click', function(){
-    if (socket && currentView) socket.emit('resetStats', { phone: currentView });
+    if (socket && currentView) socket.emit('resetStats', {}); // targets server's viewingId
   });
 
   // Clear Log
@@ -1531,8 +1702,7 @@
     clearTimeout(configTimer);
     configTimer = setTimeout(function() {
       if (socket && currentView) {
-        socket.emit('setLevels', {
-          phone: currentView,
+        socket.emit('setLevels', { // targets server's viewingId
           baseAmt: parseInt($('abBaseAmt').value) || 2,
           maxLevel: parseInt($('abMaxLvl').value) || 10,
         });
@@ -1545,8 +1715,7 @@
   // Watch Toggle
   $('abWatchToggle').addEventListener('change', function(){
     if (socket && currentView) {
-      socket.emit('setWatch', {
-        phone: currentView,
+      socket.emit('setWatch', { // targets server's viewingId
         enabled: this.checked,
         count: parseInt($('abWatchCount').value) || 1,
       });
@@ -1556,8 +1725,7 @@
   // Watch Count
   $('abWatchCount').addEventListener('change', function(){
     if (socket && currentView) {
-      socket.emit('setWatch', {
-        phone: currentView,
+      socket.emit('setWatch', { // targets server's viewingId
         enabled: $('abWatchToggle').checked,
         count: parseInt(this.value) || 1,
       });
@@ -1582,7 +1750,7 @@
   function setGameMode(mode) {
     if (!currentView) { return; }
     if (mode === currentGameMode) return;
-    socket.emit('setGameMode', { phone: currentView, gameMode: mode });
+    socket.emit('setGameMode', { gameMode: mode }); // targets server's viewingId
     // optimistic UI; server confirms via 'state'
   }
   window.setGameMode = setGameMode;
@@ -1620,7 +1788,7 @@
   // Bet Record
   $('abBtnRefreshBR').addEventListener('click', function(){
     betRecordPage = 1;
-    if (socket && currentView) socket.emit('getBetRecord', { phone: currentView, page: 1 });
+    if (socket && currentView) socket.emit('getBetRecord', { page: 1 }); // targets server's viewingId
   });
 
   // ─────────────────────────────────────────────────────
@@ -1641,7 +1809,7 @@
     $('expBar').style.width = '10%';
     $('expProgressText').textContent = 'Requesting ' + totalWant + ' records from server…';
     expLog('info', 'Fetching ' + totalWant + ' records via server (signed + paginated)…');
-    socket.emit('exportHistory', { phone: currentView, totalRecords: totalWant });
+    socket.emit('exportHistory', { totalRecords: totalWant }); // targets server's viewingId
   };
 
   function _bindExpHistorySocket() {
@@ -1735,11 +1903,12 @@
     $('expStats').style.display = 'block';
   }
   $('abBetRecordPrev').addEventListener('click', function(){
-    if (betRecordPage > 1) { betRecordPage--; if (socket && currentView) socket.emit('getBetRecord', { phone: currentView, page: betRecordPage }); }
+    // targets server's viewingId
+    if (betRecordPage > 1) { betRecordPage--; if (socket && currentView) socket.emit('getBetRecord', { page: betRecordPage }); }
   });
   $('abBetRecordNext').addEventListener('click', function(){
     betRecordPage++;
-    if (socket && currentView) socket.emit('getBetRecord', { phone: currentView, page: betRecordPage });
+    if (socket && currentView) socket.emit('getBetRecord', { page: betRecordPage }); // targets server's viewingId
   });
 
 
@@ -1752,7 +1921,7 @@
     $('nxWarmupBar').style.display = '';
     $('nxWarmupFill').style.width = '5%';
     $('nxWarmupStatus').textContent = 'Connecting to server…';
-    socket.emit('nexusWarmup', { phone: currentView });
+    socket.emit('nexusWarmup', {}); // targets server's viewingId
   }
 
   socket && socket.on && (function(){
@@ -1892,7 +2061,7 @@
 
   function nexusResetStats() {
     if (!socket) return;
-    socket.emit('nexusWarmup', { phone: currentView });
+    socket.emit('nexusWarmup', {}); // targets server's viewingId
     $('nxHistoryBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#333;padding:12px">— no history yet —</td></tr>';
     ['nxBets','nxWins','nxAcc','nxRoll','nxStreak','nxLevel','nxMaxL','nxMCL'].forEach(function(id){ $(id).textContent='—'; });
     $('nexusPredBadge').textContent = '—';

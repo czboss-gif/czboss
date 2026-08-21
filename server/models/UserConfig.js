@@ -1,16 +1,23 @@
 /* ═══════════════════════════════════════════
-   KINGPIN 3.0 — UserConfig Model (MongoDB)
+   KINGPIN — UserConfig Model (MongoDB)
    Persists per-user configs across restarts.
-   Phone number = unique user ID.
+   platform + phone = unique user ID (the same phone can hold a
+   separate account on each platform).
    ═══════════════════════════════════════════ */
 
 const mongoose = require('mongoose');
 
 const userConfigSchema = new mongoose.Schema({
+  platform: {
+    type:     String,
+    required: true,
+    default:  'goa',      // rows written before platforms existed are GOA
+    trim:     true,
+    lowercase: true,
+  },
   phone: {
     type:     String,
     required: true,
-    unique:   true,
     index:    true,
     trim:     true,
   },
@@ -56,5 +63,9 @@ const userConfigSchema = new mongoose.Schema({
   timestamps: true,        // createdAt, updatedAt auto-managed
   collection: 'user_configs',
 });
+
+/* One config per account. Replaces the old phone-only unique index —
+   see scripts/migrate-platform.js for the index swap on an existing DB. */
+userConfigSchema.index({ platform: 1, phone: 1 }, { unique: true });
 
 module.exports = mongoose.model('UserConfig', userConfigSchema);

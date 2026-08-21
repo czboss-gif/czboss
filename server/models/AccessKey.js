@@ -1,7 +1,10 @@
 /* ═══════════════════════════════════════════
-   KINGPIN 3.0 — AccessKey Model (MongoDB)
-   One key = one licensed user.
-   boundPhone is locked after first successful login.
+   KINGPIN — AccessKey Model (MongoDB)
+   One key = one licensed account on one platform.
+   boundPhone + boundPlatform are locked together on first successful
+   login — a key is scoped to a single platform, matching how it'd be
+   sold/billed. To run both GOA and Dhani on the same phone number,
+   issue two keys. DEFAULT_KEY bypasses binding entirely, on either.
    ═══════════════════════════════════════════ */
 
 const mongoose = require('mongoose');
@@ -27,6 +30,14 @@ const accessKeySchema = new mongoose.Schema({
     type:    String,
     default: null,
     trim:    true,
+  },
+  /* Platform this key is locked to, set together with boundPhone on
+     first login. Null (unbound key) has no platform yet either. */
+  boundPlatform: {
+    type:    String,
+    default: null,
+    trim:    true,
+    lowercase: true,
   },
   isDefault: {
     type:    Boolean,

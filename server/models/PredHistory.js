@@ -6,6 +6,7 @@
 const mongoose = require('mongoose');
 
 const predHistorySchema = new mongoose.Schema({
+  platform: { type: String, required: true, default: 'goa', trim: true, lowercase: true },
   phone:    { type: String, required: true, index: true, trim: true },
   forIssue: { type: String, required: true },
   pred:     { type: String },           // BIG / SMALL
@@ -18,7 +19,7 @@ const predHistorySchema = new mongoose.Schema({
   collection: 'pred_history',
 });
 
-/* Compound index: phone + forIssue unique — no duplicates */
-predHistorySchema.index({ phone: 1, forIssue: 1 }, { unique: true });
+/* Compound index: platform + phone + forIssue unique — no duplicates */
+predHistorySchema.index({ platform: 1, phone: 1, forIssue: 1 }, { unique: true });
 
 module.exports = mongoose.model('PredHistory', predHistorySchema);

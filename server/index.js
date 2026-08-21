@@ -11,6 +11,7 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const KP      = require('./config');
 const proxy   = require('./proxy');
+const platforms = require('./platforms');
 const state   = require('./state');
 const { AccountEngine, setIO } = require('./engine');
 const api     = require('./api');
@@ -45,15 +46,16 @@ const BIND_HOST = process.env.BIND_HOST || '0.0.0.0';
 // Give engine module access to io for global newDraw broadcasts
 setIO(io);
 
-/* ── Per-account engine instances ── */
-const engines = new Map(); // phone → AccountEngine
+/* ── Per-account engine instances, keyed by "platform:phone" ── */
+const engines = new Map(); // acctId → AccountEngine
 
-function getOrCreateEngine(phone) {
-  if (engines.has(phone)) return engines.get(phone);
-  let acct = state.getAccount(phone);
-  if (!acct) acct = state.createAccount(phone);
+function getOrCreateEngine(platform, phone) {
+  const id = state.acctId(platform, phone);
+  if (engines.has(id)) return engines.get(id);
+  let acct = state.getAccount(platform, phone);
+  if (!acct) acct = state.createAccount(platform, phone);
   const eng = new AccountEngine(acct, io);
-  engines.set(phone, eng);
+  engines.set(id, eng);
   return eng;
 }
 
@@ -64,10 +66,13 @@ function getOrCreateEngine(phone) {
    the AccessKey on the SERVER — on connect AND live on every bet-start — so a
    missing / disabled / phone-mismatched key can neither connect nor place bets,
    and deleting a key revokes it immediately. The default super-user key still
-   works for any phone (isDefault). */
-async function gateCheck(key, phone) {
-  key   = (key   || '').trim().toUpperCase();
-  phone = (phone || '').trim();
+   works for any phone (isDefault).
+   A key binds to (phone, platform) together — see AccessKey.js — so this also
+   rejects a key being replayed against the wrong platform. */
+async function gateCheck(key, phone, platform) {
+  key      = (key   || '').trim().toUpperCase();
+  phone    = (phone || '').trim();
+  platform = platforms.resolve(platform);
   if (!key)   return { ok: false, msg: 'Access key required' };
   if (!phone) return { ok: false, msg: 'Phone required' };
   try {
@@ -78,6 +83,9 @@ async function gateCheck(key, phone) {
       const a = rec.boundPhone.replace(/[^0-9]/g, '');
       const b = phone.replace(/[^0-9]/g, '');
       if (a !== b) return { ok: false, msg: 'Key registered to a different number' };
+      if (rec.boundPlatform && rec.boundPlatform !== platform) {
+        return { ok: false, msg: `Key registered to ${platforms.get(rec.boundPlatform).name}` };
+      }
     }
     return { ok: true, isDefault: rec.isDefault };
   } catch (e) {
@@ -89,13 +97,15 @@ async function gateCheck(key, phone) {
 /* Sync presence check for control events — set only after a successful auth gate. */
 function authed(socket) { return !!(socket.data && socket.data.authKey); }
 
-function destroyEngine(phone) {
-  const eng = engines.get(phone);
+/** Accepts a composite id, or (platform, phone). */
+function destroyEngine(platform, phone) {
+  const id = phone === undefined ? platform : state.acctId(platform, phone);
+  const eng = engines.get(id);
   if (eng) {
     eng.destroy();
-    engines.delete(phone);
+    engines.delete(id);
   }
-  state.removeAccount(phone);
+  state.removeAccount(id);
 }
 
 // ── Body parsing ──
@@ -108,16 +118,23 @@ proxy.mount(app);
 admin.mount(app);
 
 // ── Key-based access routes (replaces AB passwords system) ──
-keys.mount(app, admin.requireAdmin, (phone) => {
+keys.mount(app, admin.requireAdmin, (platform, phone) => {
   /* Key disabled/deleted → stop the bound account's engine immediately. */
   if (!phone) return;
-  let eng = engines.get(phone);
+  const pid = platforms.resolve(platform);
+  const id  = state.acctId(pid, phone);
+  let eng = engines.get(id);
   if (!eng) {
+    /* Fall back to a digit-only match on the same platform — covers a
+       phone stored with different formatting (spaces, +91, etc). */
     const digits = String(phone).replace(/[^0-9]/g, '');
-    for (const [p, e] of engines) { if (p.replace(/[^0-9]/g, '') === digits) { eng = e; break; } }
+    for (const [eid, e] of engines) {
+      const [ePid, ePhone] = eid.split(':');
+      if (ePid === pid && String(ePhone).replace(/[^0-9]/g, '') === digits) { eng = e; break; }
+    }
   }
-  if (eng) { eng.stop(); console.log(`[GATE] Engine stopped — key revoked for ${phone}`); }
-  io.to(phone).emit('authError', { phone, msg: 'Access key revoked' });
+  if (eng) { eng.stop(); console.log(`[GATE] Engine stopped — key revoked for ${id}`); }
+  io.to(id).emit('authError', { phone, platform: pid, msg: 'Access key revoked' });
   io.emit('accountList', state.listAccounts());
 });
 
@@ -130,13 +147,14 @@ monitor.mount(app, io);
 // ── Predictor accuracy tester (always-on, independent of any browser tab) ──
 predictorEngine.mount(app, io);
 
-// ── Nexus warmup endpoint: GET /api/nexus-warmup?phone=PHONE&records=500 ──
+// ── Nexus warmup endpoint: GET /api/nexus-warmup?phone=PHONE&platform=goa&records=500 ──
 app.get('/api/nexus-warmup', async (req, res) => {
   const phone = req.query.phone;
+  const platform = platforms.resolve(req.query.platform);
   const totalRecords = Math.min(parseInt(req.query.records) || 500, 1000);
   if (!phone) return res.json({ ok: false, msg: 'phone required', list: [] });
-  const acct = state.getAccount(phone);
-  if (!acct) return res.json({ ok: false, msg: `account ${phone} not found — open browser and log in first`, list: [] });
+  const acct = state.getAccount(platform, phone);
+  if (!acct) return res.json({ ok: false, msg: `account ${platform}:${phone} not found — open browser and log in first`, list: [] });
   if (!acct.lotteryToken) return res.json({ ok: false, msg: 'no token — account not logged in', list: [] });
 
   const PER_PAGE = 100;
@@ -154,8 +172,7 @@ app.get('/api/nexus-warmup', async (req, res) => {
         const qs = new URLSearchParams(signedParams).toString();
         const url = `${proxy.GOA_API}/api/Lottery/GetHistoryIssuePage?${qs}`;
         r = await proxy.httpGet(url, {
-          'Origin': 'https://goagames.social',
-          'Referer': 'https://goagames.social/',
+          ...platforms.headers(acct.platform),
           'Authorization': `Bearer ${acct.lotteryToken}`,
         });
         if (r._respAuth) {
@@ -169,7 +186,9 @@ app.get('/api/nexus-warmup', async (req, res) => {
         // code=7 or other error — try relogin
         if (attempt < 3) {
           console.log(`[nexus-warmup] code=${r.code} (${r.msg}) — attempting relogin…`);
-          const reloginRes = await proxy.relogin(acct);
+          /* Was passing the account object where (platform, phone, pwd) is
+             expected, so this path never actually re-logged in. */
+          const reloginRes = await proxy.relogin(acct.platform, acct.phone, acct.pwd);
           if (reloginRes.ok && reloginRes.lotteryToken) {
             acct.lotteryToken = reloginRes.lotteryToken;
             console.log(`[nexus-warmup] relogin OK, new token=${acct.lotteryToken.slice(0,16)}…`);
@@ -205,28 +224,39 @@ app.get('/api/nexus-warmup', async (req, res) => {
 io.on('connection', (socket) => {
   console.log(`[IO] Client connected: ${socket.id}`);
 
-  let viewingPhone = null; // which account this socket is currently viewing
+  let viewingId = null; // "platform:phone" of the account this socket is currently viewing
+
+  /* Resolve which account a handler's payload refers to: an explicit
+     {platform, phone} on the message, else whatever this socket is
+     currently viewing. Every handler below goes through this so the
+     room name, the engines-Map key and the Mongo scope always agree. */
+  function targetId(data) {
+    if (data?.phone) return state.acctId(data.platform, data.phone);
+    return viewingId;
+  }
 
   /* ── Auth: browser sends tokens after login ── */
   socket.on('auth', async (data) => {
     try {
-      const phone = data.phone || '';
+      const phone    = data.phone || '';
+      const platform = platforms.resolve(data.platform);
       if (!phone) { socket.emit('error', { msg: 'No phone provided' }); return; }
 
       /* ── SECURITY GATE: validate the access key server-side before doing
          anything. Without this the key check was browser-only and bypassable. */
-      const gate = await gateCheck(data.key, phone);
+      const gate = await gateCheck(data.key, phone, platform);
       if (!gate.ok) {
-        console.warn(`[GATE] auth REJECTED phone=${phone} key=${(data.key||'').slice(0,5)}… — ${gate.msg}`);
-        socket.emit('authError', { phone, msg: gate.msg });
+        console.warn(`[GATE] auth REJECTED ${platform}:${phone} key=${(data.key||'').slice(0,5)}… — ${gate.msg}`);
+        socket.emit('authError', { phone, platform, msg: gate.msg });
         return;
       }
       socket.data.authKey     = (data.key || '').trim().toUpperCase();
       socket.data.authDefault = !!gate.isDefault;
 
       // Create/get account + engine (createAccount loads saved config from DB)
-      let acct = state.getAccount(phone);
-      if (!acct) acct = await state.createAccount(phone);
+      let acct = state.getAccount(platform, phone);
+      if (!acct) acct = await state.createAccount(platform, phone);
+      const id = acct.id;
 
       acct.lotteryToken = data.lotteryToken || '';
       acct.webapiToken  = data.webapiToken || '';
@@ -234,21 +264,22 @@ io.on('connection', (socket) => {
       /* Save encrypted password if provided */
       if (data.pwd) {
         acct.pwd = data.pwd;
-        state.saveConfig(phone).catch(() => {});
+        state.saveConfig(platform, phone).catch(() => {});
       }
 
-      const eng = getOrCreateEngine(phone);
+      const eng = getOrCreateEngine(platform, phone);
 
-      console.log(`[IO] Auth: phone=${phone}, token=${data.lotteryToken ? 'yes' : 'no'}`);
+      console.log(`[IO] Auth: ${id}, token=${data.lotteryToken ? 'yes' : 'no'}`);
 
       // Join this account's room for updates
-      if (viewingPhone && viewingPhone !== phone) socket.leave(viewingPhone);
-      socket.join(phone);
-      viewingPhone = phone;
+      if (viewingId && viewingId !== id) socket.leave(viewingId);
+      socket.join(id);
+      viewingId = id;
+      console.log(`[MAXLOSS-DEBUG] auth: socket=${socket.id} joined room="${id}" authDefault=${socket.data.authDefault}`);
 
       // Validate by fetching balance
       await eng.fetchBalance();
-      console.log(`[IO] Balance for ${phone}: ₹${acct.balance}`);
+      console.log(`[IO] Balance for ${id}: ₹${acct.balance}`);
 
       // Start passive prediction
       eng.startPassive();
@@ -266,19 +297,20 @@ io.on('connection', (socket) => {
 
   /* ── Switch View: change which account this socket views ── */
   socket.on('switchView', (data) => {
-    const phone = data?.phone;
-    if (!phone) return;
-    const acct = state.getAccount(phone);
+    const id = targetId(data);
+    if (!id) return;
+    const acct = state.getAccount(id);
     if (!acct) return;
 
-    if (viewingPhone) socket.leave(viewingPhone);
-    socket.join(phone);
-    viewingPhone = phone;
+    if (viewingId) socket.leave(viewingId);
+    socket.join(id);
+    viewingId = id;
 
-    const eng = engines.get(phone);
+    const eng = engines.get(id);
     socket.emit('state', acct.snapshot());
     if (eng) socket.emit('logs', eng.getLogs());
-    console.log(`[IO] Switched view to ${phone}`);
+    console.log(`[IO] Switched view to ${id}`);
+    console.log(`[MAXLOSS-DEBUG] switchView: socket=${socket.id} joined room="${id}" maxLossActive=${acct.maxLossActive}`);
   });
 
   /* ── List Accounts ── */
@@ -288,24 +320,27 @@ io.on('connection', (socket) => {
 
   /* ── Engine Controls ── */
   socket.on('start', async (data) => {
-    const phone     = data?.phone     || viewingPhone;
+    const id        = targetId(data);
     const sessionId = data?.sessionId || null;
-    if (!phone) return;
+    if (!id) return;
+    const acct = state.getAccount(id);
+    if (!acct) return;
+    const { platform, phone } = acct;
 
     /* ── SECURITY GATE: this socket must have authed, and the key must STILL be
        valid right now (live re-check → deleting/disabling a key blocks betting
-       immediately, and a key bound to another phone can't start this one). */
+       immediately, and a key bound to another phone or platform can't start this one). */
     if (!authed(socket)) { socket.emit('authError', { phone, msg: 'Not authenticated' }); return; }
-    const gate = await gateCheck(socket.data.authKey, phone);
+    const gate = await gateCheck(socket.data.authKey, phone, platform);
     if (!gate.ok) {
-      console.warn(`[GATE] start REJECTED phone=${phone} — ${gate.msg}`);
-      engines.get(phone)?.stop();
-      socket.emit('authError', { phone, msg: gate.msg });
+      console.warn(`[GATE] start REJECTED ${id} — ${gate.msg}`);
+      engines.get(id)?.stop();
+      socket.emit('authError', { phone, platform, msg: gate.msg });
       return;
     }
 
-    console.log(`[IO] Start: ${phone}`);
-    engines.get(phone)?.start();
+    console.log(`[IO] Start: ${id}`);
+    engines.get(id)?.start();
     io.emit('accountList', state.listAccounts());
 
     /* Record bet start time in KeySession */
@@ -315,13 +350,45 @@ io.on('connection', (socket) => {
     }
   });
 
+  /* ── Manual Recovery Bet — DEFAULT_KEY only ──
+     One-shot resume after the max-level circuit breaker (acct.maxLossActive).
+     Same live key/platform gate as `start`, PLUS socket.data.authDefault:
+     the client hides this button for non-default sessions, but that's a UI
+     nicety, not the boundary — a regular key must never be able to fire a
+     max-stake bet on someone else's account by hand-crafting the event. */
+  socket.on('manualBet', async (data) => {
+    const id = targetId(data);
+    if (!id) return;
+    const acct = state.getAccount(id);
+    if (!acct) return;
+    const { platform, phone } = acct;
+
+    if (!authed(socket)) { socket.emit('authError', { phone, msg: 'Not authenticated' }); return; }
+    if (!socket.data.authDefault) {
+      console.warn(`[GATE] manualBet REJECTED ${id} — not a DEFAULT_KEY session`);
+      socket.emit('authError', { phone, platform, msg: 'Manual bet requires the default key' });
+      return;
+    }
+    const gate = await gateCheck(socket.data.authKey, phone, platform);
+    if (!gate.ok) {
+      console.warn(`[GATE] manualBet REJECTED ${id} — ${gate.msg}`);
+      socket.emit('authError', { phone, platform, msg: gate.msg });
+      return;
+    }
+    if (!acct.maxLossActive) return; // nothing to recover from — ignore stray clicks
+
+    console.log(`[IO] Manual recovery bet: ${id}${data?.amount ? ` amount=₹${data.amount}` : ''}`);
+    await engines.get(id)?.manualBet(data?.amount);
+    io.emit('accountList', state.listAccounts());
+  });
+
   socket.on('stop', async (data) => {
-    const phone     = data?.phone     || viewingPhone;
+    const id        = targetId(data);
     const sessionId = data?.sessionId || null;
     const profit    = parseFloat(data?.profit) || 0;
-    if (!phone) return;
-    console.log(`[IO] Stop: ${phone}`);
-    engines.get(phone)?.stop();
+    if (!id) return;
+    console.log(`[IO] Stop: ${id}`);
+    engines.get(id)?.stop();
     io.emit('accountList', state.listAccounts());
 
     /* Record bet stop time and profit in KeySession */
@@ -337,52 +404,52 @@ io.on('connection', (socket) => {
   /* ── Formula Change ── */
   socket.on('setFormula', (data) => {
     if (!authed(socket)) return;
-    const phone = data?.phone || viewingPhone;
+    const id = targetId(data);
     const formula = typeof data === 'string' ? data : data?.formula;
-    if (!phone || !formula) return;
-    const acct = state.getAccount(phone);
+    if (!id || !formula) return;
+    const acct = state.getAccount(id);
     if (!acct || acct.isRunning()) return;
     acct.setFormula(formula);
-    console.log(`[IO] Formula for ${phone}: ${formula}`);
-    io.to(phone).emit('state', acct.snapshot());
-    state.saveConfig(phone);
+    console.log(`[IO] Formula for ${id}: ${formula}`);
+    io.to(id).emit('state', acct.snapshot());
+    state.saveConfig(id);
   });
 
   /* ── Game Mode Change (30S ↔ 1M) — per account ── */
   socket.on('setGameMode', (data) => {
     if (!authed(socket)) return;
-    const phone = data?.phone || viewingPhone;
-    const mode  = typeof data === 'string' ? data : data?.gameMode;
-    if (!phone || !mode) return;
-    const acct = state.getAccount(phone);
+    const id   = targetId(data);
+    const mode = typeof data === 'string' ? data : data?.gameMode;
+    if (!id || !mode) return;
+    const acct = state.getAccount(id);
     if (!acct) return;
     /* Can't switch mode mid-run — different period stream & timing */
     if (acct.isRunning()) {
-      io.to(phone).emit('toast', { title: 'Stop first', msg: 'Stop the engine before changing game mode.', type: 'warn' });
+      io.to(id).emit('toast', { title: 'Stop first', msg: 'Stop the engine before changing game mode.', type: 'warn' });
       return;
     }
     const changed = acct.setGameMode(mode);   // resets histBuf/predState + snaps formula
     if (!changed) return;
-    console.log(`[IO] GameMode for ${phone}: ${mode} (formula→${acct.formula})`);
+    console.log(`[IO] GameMode for ${id}: ${mode} (formula→${acct.formula})`);
     /* Re-init passive prediction loop so it fetches the new mode's history */
-    const eng = engines.get(phone);
+    const eng = engines.get(id);
     if (eng) { eng.stopPassive(); eng.startPassive(); }
-    io.to(phone).emit('state', acct.snapshot());
-    state.saveConfig(phone);
+    io.to(id).emit('state', acct.snapshot());
+    state.saveConfig(id);
   });
 
   /* ── Levels Config ── */
   socket.on('setLevels', (data) => {
     if (!authed(socket)) return;
-    const phone = data?.phone || viewingPhone;
-    if (!phone) return;
-    const acct = state.getAccount(phone);
+    const id = targetId(data);
+    if (!id) return;
+    const acct = state.getAccount(id);
     if (!acct || acct.isRunning()) return;
     try {
       if (Array.isArray(data.custom) && data.custom.length > 0) {
         const levels = data.custom.map(v => Math.max(1, parseInt(v) || 1));
         acct.setLevels(levels);
-        console.log(`[IO] Custom levels for ${phone}: [${levels.join(',')}]`);
+        console.log(`[IO] Custom levels for ${id}: [${levels.join(',')}]`);
       } else {
         const baseAmt = Math.max(1, parseInt(data.baseAmt) || 2);
         const maxLevel = Math.max(1, Math.min(15, parseInt(data.maxLevel) || 10));
@@ -392,10 +459,10 @@ io.on('connection', (socket) => {
           else levels.push(Math.ceil(levels[i - 1] * 2.15));
         }
         acct.setLevels(levels);
-        console.log(`[IO] Levels for ${phone}: base=₹${baseAmt} max=${maxLevel}`);
+        console.log(`[IO] Levels for ${id}: base=₹${baseAmt} max=${maxLevel}`);
       }
-      io.to(phone).emit('state', acct.snapshot());
-      state.saveConfig(phone);
+      io.to(id).emit('state', acct.snapshot());
+      state.saveConfig(id);
     } catch (e) {
       console.error('[IO] setLevels error:', e.message);
     }
@@ -404,38 +471,38 @@ io.on('connection', (socket) => {
   /* ── Watch Mode ── */
   socket.on('setWatch', (data) => {
     if (!authed(socket)) return;
-    const phone = data?.phone || viewingPhone;
-    if (!phone) return;
-    const acct = state.getAccount(phone);
+    const id = targetId(data);
+    if (!id) return;
+    const acct = state.getAccount(id);
     if (!acct || acct.isRunning()) return;
     acct.watchEnabled = !!data.enabled;
     if (data.count !== undefined) acct.setWatchLossTarget(data.count);
-    console.log(`[IO] Watch for ${phone}: ${data.enabled ? 'ON' : 'OFF'} target=${acct.watchLossTarget}`);
-    io.to(phone).emit('state', acct.snapshot());
-    state.saveConfig(phone);
+    console.log(`[IO] Watch for ${id}: ${data.enabled ? 'ON' : 'OFF'} target=${acct.watchLossTarget}`);
+    io.to(id).emit('state', acct.snapshot());
+    state.saveConfig(id);
   });
 
   /* ── Refresh Balance ── */
   socket.on('refreshBalance', async (data) => {
-    const phone = data?.phone || viewingPhone;
-    if (!phone) return;
-    const eng = engines.get(phone);
+    const id = targetId(data);
+    if (!id) return;
+    const eng = engines.get(id);
     if (eng) {
       await eng.fetchBalance();
-      const acct = state.getAccount(phone);
-      if (acct) io.to(phone).emit('state', acct.snapshot());
+      const acct = state.getAccount(id);
+      if (acct) io.to(id).emit('state', acct.snapshot());
     }
   });
 
   /* ── Get Bet Record ── */
   socket.on('getBetRecord', async (data) => {
-    const phone = data?.phone || viewingPhone;
-    if (!phone) return;
-    const acct = state.getAccount(phone);
+    const id = targetId(data);
+    if (!id) return;
+    const acct = state.getAccount(id);
     if (!acct) return;
     try {
       const page = data?.page || 1;
-      console.log(`[IO] getBetRecord: ${phone} page=${page}`);
+      console.log(`[IO] getBetRecord: ${id} page=${page}`);
       const result = await api.getBetRecord(acct, page, 10);
       socket.emit('betRecord', { page, result });
     } catch (e) {
@@ -446,15 +513,15 @@ io.on('connection', (socket) => {
 
   /* ── Export Game History ── */
   socket.on('exportHistory', async (data) => {
-    const phone = data?.phone || viewingPhone;
-    if (!phone) return;
-    const acct = state.getAccount(phone);
+    const id = targetId(data);
+    if (!id) return;
+    const acct = state.getAccount(id);
     if (!acct) return;
 
     const totalRecords = Math.min(parseInt(data?.totalRecords) || 500, 500);
     const PER_PAGE = 10;
     const maxPages = Math.ceil(totalRecords / PER_PAGE);
-    console.log(`[IO] exportHistory: phone=${phone} want=${totalRecords} pages=${maxPages} token=${acct.lotteryToken ? acct.lotteryToken.slice(0,20)+'…' : 'NONE'}`);
+    console.log(`[IO] exportHistory: ${id} want=${totalRecords} pages=${maxPages} token=${acct.lotteryToken ? acct.lotteryToken.slice(0,20)+'…' : 'NONE'}`);
 
     if (!acct.lotteryToken) {
       return socket.emit('exportHistoryResult', { ok: false, msg: 'No token — account not logged in', list: [] });
@@ -487,8 +554,7 @@ io.on('connection', (socket) => {
           console.log(`[IO] exportHistory page ${pageNo}/${maxPages} attempt=${attempt} signedParams=${JSON.stringify(signedParams)}`);
 
           res = await proxy.httpGet(url, {
-            'Origin': 'https://goagames.social',
-            'Referer': 'https://goagames.social/',
+            ...platforms.headers(acct.platform),
             'Authorization': `Bearer ${acct.lotteryToken}`,
           });
 
@@ -545,9 +611,9 @@ io.on('connection', (socket) => {
 
   /* ── NEXUS: warmup engine using account token (same as exportHistory) ── */
   socket.on('nexusWarmup', async (data) => {
-    const phone = data?.phone || viewingPhone;
-    if (!phone) return socket.emit('nexusWarmupDone', { ok: false, msg: 'No account selected' });
-    const acct = state.getAccount(phone);
+    const id = targetId(data);
+    if (!id) return socket.emit('nexusWarmupDone', { ok: false, msg: 'No account selected' });
+    const acct = state.getAccount(id);
     if (!acct?.lotteryToken) return socket.emit('nexusWarmupDone', { ok: false, msg: 'Account not logged in' });
 
     const totalRecords = 500;
@@ -555,7 +621,7 @@ io.on('connection', (socket) => {
     const maxPages = Math.ceil(totalRecords / PER_PAGE);
     const allRecords = [];
     const gameCode = acct.gameMode || KP.GAME_MODE || 'WinGo_30S';
-    console.log(`[NEXUS] nexusWarmup for ${phone}: fetching up to ${totalRecords} records (${maxPages} pages)…`);
+    console.log(`[NEXUS] nexusWarmup for ${id}: fetching up to ${totalRecords} records (${maxPages} pages)…`);
     socket.emit('nexusWarmupProgress', { page: 0, maxPages, total: 0, status: 'Starting…' });
 
     for (let pageNo = 1; pageNo <= maxPages; pageNo++) {
@@ -565,7 +631,7 @@ io.on('connection', (socket) => {
           const sp = proxy.signLottery({ gameCode, pageNo, pageSize: PER_PAGE });
           const qs = new URLSearchParams(sp).toString();
           const r = await proxy.httpGet(`${proxy.GOA_API}/api/Lottery/GetHistoryIssuePage?${qs}`, {
-            'Origin': 'https://goagames.social', 'Referer': 'https://goagames.social/',
+            ...platforms.headers(acct.platform),
             'Authorization': `Bearer ${acct.lotteryToken}`,
           });
           if (r._respAuth) { const t = proxy.extractBearer(r._respAuth); if (t) acct.lotteryToken = t; delete r._respAuth; }
@@ -596,26 +662,27 @@ io.on('connection', (socket) => {
 
   /* ── Reset Stats ── */
   socket.on('resetStats', (data) => {
-    const phone = data?.phone || viewingPhone;
-    if (!phone) return;
-    const acct = state.getAccount(phone);
+    const id = targetId(data);
+    if (!id) return;
+    const acct = state.getAccount(id);
     if (!acct || acct.isRunning()) return;
     acct.resetSession();
-    io.to(phone).emit('state', acct.snapshot());
-    io.to(phone).emit('toast', { title: 'Stats Reset', msg: 'All stats cleared', type: 'info' });
+    io.to(id).emit('state', acct.snapshot());
+    io.to(id).emit('toast', { title: 'Stats Reset', msg: 'All stats cleared', type: 'info' });
   });
 
   /* ── Logout (single account) ── */
   socket.on('logout', (data) => {
-    const phone = data?.phone || viewingPhone;
-    if (!phone) return;
-    console.log(`[IO] Logout: ${phone}`);
-    destroyEngine(phone);
-    if (viewingPhone === phone) {
-      socket.leave(phone);
-      viewingPhone = null;
+    const id = targetId(data);
+    if (!id) return;
+    const acct = state.getAccount(id);
+    console.log(`[IO] Logout: ${id}`);
+    destroyEngine(id);
+    if (viewingId === id) {
+      socket.leave(id);
+      viewingId = null;
     }
-    socket.emit('accountRemoved', { phone });
+    socket.emit('accountRemoved', { phone: acct?.phone, platform: acct?.platform, id });
     io.emit('accountList', state.listAccounts());
   });
 
